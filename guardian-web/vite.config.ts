@@ -10,7 +10,8 @@ export default defineConfig({
       srcDir: "src",
       filename: "sw.ts",
       registerType: "autoUpdate",
-      includeAssets: ["icon-192.png", "icon-512.png", "icon-512-maskable.png", "fonts/*", "assets/*"],
+      includeAssets: ["icon-192.png", "icon-512.png", "icon-512-maskable.png"],
+      includeManifestIcons: false,
       manifest: {
         name: "낙상제로 보호자",
         short_name: "낙상제로",
