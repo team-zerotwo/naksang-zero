@@ -1,0 +1,69 @@
+<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>P2 카메라 위치 잡기 · 낙상제로</title><style>/* 낙상제로 팔레트 1: 세이지 온기 — 따뜻한 오트밀 크림 위 세이지 그린 — 집처럼 포근한 신뢰 */
+:root{
+  --c-bg: #F5F2EA;
+  --c-surface: #FFFFFF;
+  --c-text: #1E2721;
+  --c-sub: #4A554D;
+  --c-border: #D6D1C4;
+  --c-btn: #35634A;
+  --c-btnText: #FFFFFF;
+  --c-ok: #2E6B3E;
+  --c-okBg: #E3F0E4;
+  --c-warn: #7F5200;
+  --c-warnBg: #FBEFD6;
+  --c-danger: #B3261E;
+  --c-dangerText: #FFFFFF;
+  --c-link: #1F5E8C;
+  --c-focus: var(--c-link);
+  /* 파생 톤(일러스트·면 전용, 기존 토큰 혼합) */
+  --c-sage600: #305742; /* btn 80% + text */
+  --c-sage300: #9FB2A2; /* btn 45% + bg */
+  --c-sage150: #D2D8CD; /* btn 18% + bg */
+  --c-clay500: #B79960; /* warn 55% + warnBg */
+  --c-clay250: #E0CCA7; /* warn 22% + warnBg */
+  --c-sky: #DBE5ED; /* link 16% + surface */
+  --c-night: #1E3A46; /* link 35% + text */
+  --c-blush: #EECBB5; /* danger 18% + warnBg */
+  --c-paper: #FAF8F4; /* bg 50% + surface */
+  /* 규칙: --c-danger 는 낙상 알림 화면 전용 */
+}
+
+@font-face{font-family:GM;src:url(../fonts/GmarketSansBold.otf);font-weight:700}
+@font-face{font-family:GM;src:url(../fonts/GmarketSansMedium.otf);font-weight:500}
+@font-face{font-family:PR;src:url(../fonts/Pretendard-Regular.otf);font-weight:400}
+@font-face{font-family:PR;src:url(../fonts/Pretendard-SemiBold.otf);font-weight:600}
+@font-face{font-family:PR;src:url(../fonts/Pretendard-Bold.otf);font-weight:700}
+@font-face{font-family:PR;src:url(../fonts/Pretendard-ExtraBold.otf);font-weight:800}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#888;font-family:PR,'Noto Sans CJK KR',sans-serif;color:var(--c-text)}
+.screen{width:390px;height:844px;position:relative;overflow:hidden;background:var(--c-bg);font-size:16px;line-height:1.5;letter-spacing:-.01em}
+.sb{position:absolute;top:0;left:0;right:0;height:44px;display:flex;justify-content:space-between;align-items:center;padding:0 28px;font-weight:700;font-size:15px;z-index:9}
+.d{font-family:GM;font-weight:700;letter-spacing:-.03em;line-height:1.12}
+.ab{position:absolute}
+.sub{color:var(--c-sub)}
+.btn{font-family:inherit;display:flex;align-items:center;justify-content:center;gap:8px;height:58px;border-radius:16px;background:var(--c-btn);color:var(--c-btnText);font-weight:700;font-size:18px;border:0;width:100%}
+.btn.ghost{background:transparent;color:var(--c-btn);border:2px solid var(--c-btn)}
+.row{display:flex;align-items:center;gap:14px;min-height:56px;border-top:1.5px solid var(--c-border);padding:10px 0}
+.row:last-child{border-bottom:1.5px solid var(--c-border)}
+.row .k{width:84px;color:var(--c-sub);font-size:15px;flex:none}
+.row .v{font-weight:600;font-size:16px;flex:1}
+.lbl{font-size:15px;font-weight:700;color:var(--c-sub);letter-spacing:.02em}
+.badge{display:inline-flex;align-items:center;gap:5px;font-size:15px;font-weight:700;padding:3px 10px;border-radius:8px}
+.tabbar{position:absolute;bottom:0;left:0;right:0;height:84px;display:flex;justify-content:space-around;padding-top:8px;background:var(--c-bg);border-top:1.5px solid var(--c-border)}
+.tabbar div{display:flex;flex-direction:column;align-items:center;font-size:15px;color:var(--c-sub);min-width:64px;min-height:48px}
+.tabbar .on{color:var(--c-btn);font-weight:700}
+svg.i{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;flex:none}
+</style></head><body><div class="screen"><div class="sb"><span>9:41</span><span style="letter-spacing:2px">▮▮▮ ◔ ▭</span></div>
+<div class="ab" style="inset:0 0 auto 0;height:560px;overflow:hidden;background:var(--c-text)">
+ <img src="../assets/living-room.svg" style="width:760px;margin:40px 0 0 -200px"><div class="ab" style="top:0;left:0;right:0;height:150px;background:linear-gradient(var(--c-text) 55%,rgba(30,39,33,0))"></div>
+ <div class="ab" style="top:236px;left:118px;width:120px;height:210px;border:3px dashed #fff;border-radius:18px"></div>
+ <div class="ab" style="top:206px;left:118px;color:#fff;font-size:15px;font-weight:700;background:var(--c-text);padding:2px 8px;border-radius:6px">사람 인식</div>
+</div>
+<div class="ab" style="top:52px;left:16px;right:24px;display:flex;align-items:center;color:#fff;justify-content:space-between"><span style="display:flex;align-items:center;min-height:44px;min-width:44px"><svg class="i" viewBox="0 0 24 24" style="width:26px;height:26px"><path d="M15 5l-7 7 7 7"/></svg></span><b style="font-size:17px">카메라 위치</b><span style="font-size:15px;font-weight:700">2 / 2</span></div>
+<div class="ab" style="left:14px;right:14px;top:470px;height:60px;background:var(--c-sage300);border-radius:28px 28px 0 0;opacity:.9"></div>
+<div class="ab" style="left:0;right:0;bottom:0;top:488px;background:var(--c-bg);border-radius:30px 30px 0 0;padding:26px 24px;box-shadow:0 -8px 0 rgba(30,39,33,.12)">
+ <div style="color:var(--c-ok);font-weight:700;font-size:15px;display:flex;gap:6px;align-items:center"><svg class="i" viewBox="0 0 24 24" style="width:20px;height:20px"><path d="M5 12l5 5 9-10"/></svg>사람이 잘 보여요</div>
+ <div class="d" style="font-size:26px;margin:6px 0 12px">방 전체가 보이게<br>폰을 세워 주세요</div>
+ <div style="font-size:16px;line-height:1.6"><b>바닥이 화면 아래쪽에 보여요</b> <span class="sub"><br>— 침대 옆 바닥까지 들어와요</span><br><span style="display:inline-flex;gap:6px;align-items:center"><svg class="i" viewBox="0 0 24 24" style="width:18px;height:18px"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 018 0v4"/></svg><b>영상은 저장하지 않아요</b></span> <span class="sub">— 폰 안에서만 판단해요</span></div>
+ <div style="position:absolute;left:24px;right:24px;bottom:34px"><button class="btn">이 위치로 시작</button></div>
+</div></div></body></html>

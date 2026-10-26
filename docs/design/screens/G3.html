@@ -1,0 +1,75 @@
+<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>G3 낙상 알림 · 낙상제로</title><style>/* 낙상제로 팔레트 1: 세이지 온기 — 따뜻한 오트밀 크림 위 세이지 그린 — 집처럼 포근한 신뢰 */
+:root{
+  --c-bg: #F5F2EA;
+  --c-surface: #FFFFFF;
+  --c-text: #1E2721;
+  --c-sub: #4A554D;
+  --c-border: #D6D1C4;
+  --c-btn: #35634A;
+  --c-btnText: #FFFFFF;
+  --c-ok: #2E6B3E;
+  --c-okBg: #E3F0E4;
+  --c-warn: #7F5200;
+  --c-warnBg: #FBEFD6;
+  --c-danger: #B3261E;
+  --c-dangerText: #FFFFFF;
+  --c-link: #1F5E8C;
+  --c-focus: var(--c-link);
+  /* 파생 톤(일러스트·면 전용, 기존 토큰 혼합) */
+  --c-sage600: #305742; /* btn 80% + text */
+  --c-sage300: #9FB2A2; /* btn 45% + bg */
+  --c-sage150: #D2D8CD; /* btn 18% + bg */
+  --c-clay500: #B79960; /* warn 55% + warnBg */
+  --c-clay250: #E0CCA7; /* warn 22% + warnBg */
+  --c-sky: #DBE5ED; /* link 16% + surface */
+  --c-night: #1E3A46; /* link 35% + text */
+  --c-blush: #EECBB5; /* danger 18% + warnBg */
+  --c-paper: #FAF8F4; /* bg 50% + surface */
+  /* 규칙: --c-danger 는 낙상 알림 화면 전용 */
+}
+
+@font-face{font-family:GM;src:url(../fonts/GmarketSansBold.otf);font-weight:700}
+@font-face{font-family:GM;src:url(../fonts/GmarketSansMedium.otf);font-weight:500}
+@font-face{font-family:PR;src:url(../fonts/Pretendard-Regular.otf);font-weight:400}
+@font-face{font-family:PR;src:url(../fonts/Pretendard-SemiBold.otf);font-weight:600}
+@font-face{font-family:PR;src:url(../fonts/Pretendard-Bold.otf);font-weight:700}
+@font-face{font-family:PR;src:url(../fonts/Pretendard-ExtraBold.otf);font-weight:800}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#888;font-family:PR,'Noto Sans CJK KR',sans-serif;color:var(--c-text)}
+.screen{width:390px;height:844px;position:relative;overflow:hidden;background:var(--c-bg);font-size:16px;line-height:1.5;letter-spacing:-.01em}
+.sb{position:absolute;top:0;left:0;right:0;height:44px;display:flex;justify-content:space-between;align-items:center;padding:0 28px;font-weight:700;font-size:15px;z-index:9}
+.d{font-family:GM;font-weight:700;letter-spacing:-.03em;line-height:1.12}
+.ab{position:absolute}
+.sub{color:var(--c-sub)}
+.btn{font-family:inherit;display:flex;align-items:center;justify-content:center;gap:8px;height:58px;border-radius:16px;background:var(--c-btn);color:var(--c-btnText);font-weight:700;font-size:18px;border:0;width:100%}
+.btn.ghost{background:transparent;color:var(--c-btn);border:2px solid var(--c-btn)}
+.row{display:flex;align-items:center;gap:14px;min-height:56px;border-top:1.5px solid var(--c-border);padding:10px 0}
+.row:last-child{border-bottom:1.5px solid var(--c-border)}
+.row .k{width:84px;color:var(--c-sub);font-size:15px;flex:none}
+.row .v{font-weight:600;font-size:16px;flex:1}
+.lbl{font-size:15px;font-weight:700;color:var(--c-sub);letter-spacing:.02em}
+.badge{display:inline-flex;align-items:center;gap:5px;font-size:15px;font-weight:700;padding:3px 10px;border-radius:8px}
+.tabbar{position:absolute;bottom:0;left:0;right:0;height:84px;display:flex;justify-content:space-around;padding-top:8px;background:var(--c-bg);border-top:1.5px solid var(--c-border)}
+.tabbar div{display:flex;flex-direction:column;align-items:center;font-size:15px;color:var(--c-sub);min-width:64px;min-height:48px}
+.tabbar .on{color:var(--c-btn);font-weight:700}
+svg.i{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;flex:none}
+</style></head><body><div class="screen"><div class="sb" style="color:#fff"><span>9:41</span><span style="letter-spacing:2px">▮▮▮ ◔ ▭</span></div>
+<div class="ab" style="inset:0 0 auto 0;height:330px;background:var(--c-danger)"></div>
+<svg class="ab" style="top:300px;left:0" width="390" height="60" viewBox="0 0 390 60"><path d="M0 0H390V20C330 60 260 0 190 30S60 50 0 24Z" fill="var(--c-danger)"/></svg>
+<img class="ab" src="../assets/house-worry.svg" style="top:70px;right:-40px;width:200px;transform:rotate(6deg)">
+<div class="ab" style="top:70px;left:24px;color:#fff;width:220px">
+ <div style="font-weight:700;font-size:16px;display:flex;gap:6px;align-items:center"><svg class="i" viewBox="0 0 24 24" style="width:22px;height:22px"><path d="M12 3l10 18H2z"/><path d="M12 10v5M12 18h.01"/></svg>낙상 알림</div>
+ <div class="d" style="font-size:40px;margin-top:8px">넘어짐이<br>감지됐어요</div>
+ <div style="font-size:15px;margin-top:10px">30초간 응답 없음 · 오후 3:42<br>예시 데이터</div>
+</div>
+<div class="ab" style="top:262px;left:24px;color:#fff;font-size:15px;font-weight:700;display:flex;gap:6px;align-items:center"><svg class="i" viewBox="0 0 24 24" style="width:18px;height:18px"><path d="M12 22s7-7 7-12a7 7 0 00-14 0c0 5 7 12 7 12z"/><circle cx="12" cy="10" r="2.5"/></svg>안방 · 공동현관 #1234</div>
+<img class="ab" src="../assets/town-alert.svg" style="top:330px;left:0;width:390px;height:190px;object-fit:cover;object-position:50% 20%">
+<div class="ab" style="top:442px;left:10px;right:10px;height:30px;background:var(--c-clay250);border-radius:26px 26px 0 0"></div>
+<div class="ab" style="top:456px;left:0;right:0;bottom:0;background:var(--c-bg);border-radius:26px 26px 0 0;padding:20px 24px;box-shadow:0 -6px 0 rgba(30,39,33,.12)">
+ <div style="display:flex;justify-content:space-between;align-items:flex-start"><div><div class="lbl">어르신 댁 주소</div><div class="d" style="font-size:24px;margin-top:4px">서울시 ○○구 ○○로 12</div><div style="font-weight:700;font-size:17px">101동 502호</div></div><span style="display:flex;flex-direction:column;align-items:center;font-size:15px;font-weight:700;color:var(--c-link);min-width:48px;min-height:48px"><svg class="i" viewBox="0 0 24 24" style="width:22px;height:22px"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M4 16V5a1 1 0 011-1h11"/></svg>복사</span></div>
+ <button class="btn" style="background:var(--c-danger);margin-top:12px;height:58px;font-size:20px"><svg class="i" viewBox="0 0 24 24" style="width:24px;height:24px"><path d="M6 3l3 1 1 4-2 2a12 12 0 006 6l2-2 4 1 1 3c0 1-1 2-2 2A17 17 0 014 5c0-1 1-2 2-2z"/></svg>119 전화 열기</button>
+ <p style="font-size:15px;margin-top:6px;color:var(--c-text)">전화 앱에 119만 채워 열려요. 자동 신고가 아니에요.</p>
+ <div class="row" style="margin-top:2px;min-height:48px;padding:2px 0"><svg class="i" viewBox="0 0 24 24" style="width:22px;height:22px"><path d="M6 3l3 1 1 4-2 2a12 12 0 006 6l2-2 4 1 1 3c0 1-1 2-2 2A17 17 0 014 5c0-1 1-2 2-2z"/></svg><div style="flex:1"><b>어르신께 전화 걸기</b> <span class="sub" style="font-size:15px">어르신 폰으로 바로</span></div><svg class="i" viewBox="0 0 24 24" style="width:18px;height:18px"><path d="M9 5l7 7-7 7"/></svg></div>
+ <div class="row" style="min-height:48px;padding:2px 0;border-bottom:1.5px solid var(--c-border)"><svg class="i" viewBox="0 0 24 24" style="width:22px;height:22px"><circle cx="13" cy="4" r="2"/><path d="M9 21l3-7 3 3v5M7 12l3-4 4 1 2 4"/></svg><div style="flex:1"><b>제가 가고 있어요</b> <span class="sub" style="font-size:15px">다른 보호자에게 알려요</span></div><svg class="i" viewBox="0 0 24 24" style="width:18px;height:18px"><path d="M9 5l7 7-7 7"/></svg></div>
+ <button class="btn ghost" style="position:absolute;left:24px;right:24px;width:auto;bottom:22px;height:50px"><svg class="i" viewBox="0 0 24 24" style="width:22px;height:22px"><path d="M5 12l5 5 9-10"/></svg>확인했어요</button>
+</div></div></body></html>
