@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">낙상제로</string>
+    <string name="channel_watching">지켜보는 중</string>
+    <string name="channel_watching_desc">낙상 감지가 켜져 있는 동안 표시합니다. 소리는 나지 않아요.</string>
+</resources>

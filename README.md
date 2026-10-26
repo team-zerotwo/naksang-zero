@@ -3,7 +3,7 @@
 남는 스마트폰 공기계 카메라로 고령자 낙상을 감지하고, 30초 동안 반응이 없으면 보호자에게 알리는 서비스. 팀 제로투.
 
 ## 구조
-- `android/` 공기계 감지 앱 (Android 네이티브, Kotlin, CameraX + 포즈 추정 + TFLite)
+- `android/` 공기계 감지 앱 (Kotlin, Jetpack Compose, CameraX, MediaPipe Pose). 빌드·설치는 `android/README.md`
 - `guardian-web/` 보호자 웹 (PWA, 웹 푸시)
 - `server/` 기기 등록·보호자 연결·heartbeat·낙상 이벤트 전달 (FCM)
 - `ml/` 낙상 모델 실험·변환 (포즈 키포인트 시계열 → 낙상 확률)

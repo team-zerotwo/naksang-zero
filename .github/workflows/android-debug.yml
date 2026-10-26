@@ -1,0 +1,31 @@
+name: Android debug APK
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  debug-apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Build debug APK and unit tests
+        working-directory: android
+        run: chmod +x ./gradlew && ./gradlew assembleDebug testDebugUnitTest --stacktrace
+
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: naksang-debug-apk
+          path: android/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
