@@ -1,0 +1,71 @@
+<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>P4 카운트다운 · 낙상제로</title><style>/* 낙상제로 팔레트 1: 세이지 온기 — 따뜻한 오트밀 크림 위 세이지 그린 — 집처럼 포근한 신뢰 */
+:root{
+  --c-bg: #F5F2EA;
+  --c-surface: #FFFFFF;
+  --c-text: #1E2721;
+  --c-sub: #4A554D;
+  --c-border: #D6D1C4;
+  --c-btn: #35634A;
+  --c-btnText: #FFFFFF;
+  --c-ok: #2E6B3E;
+  --c-okBg: #E3F0E4;
+  --c-warn: #7F5200;
+  --c-warnBg: #FBEFD6;
+  --c-danger: #B3261E;
+  --c-dangerText: #FFFFFF;
+  --c-link: #1F5E8C;
+  --c-focus: var(--c-link);
+  /* 파생 톤(일러스트·면 전용, 기존 토큰 혼합) */
+  --c-sage600: #305742; /* btn 80% + text */
+  --c-sage300: #9FB2A2; /* btn 45% + bg */
+  --c-sage150: #D2D8CD; /* btn 18% + bg */
+  --c-clay500: #B79960; /* warn 55% + warnBg */
+  --c-clay250: #E0CCA7; /* warn 22% + warnBg */
+  --c-sky: #DBE5ED; /* link 16% + surface */
+  --c-night: #1E3A46; /* link 35% + text */
+  --c-blush: #EECBB5; /* danger 18% + warnBg */
+  --c-paper: #FAF8F4; /* bg 50% + surface */
+  /* 규칙: --c-danger 는 낙상 알림 화면 전용 */
+}
+
+@font-face{font-family:GM;src:url(../fonts/GmarketSansBold.otf);font-weight:700}
+@font-face{font-family:GM;src:url(../fonts/GmarketSansMedium.otf);font-weight:500}
+@font-face{font-family:PR;src:url(../fonts/Pretendard-Regular.otf);font-weight:400}
+@font-face{font-family:PR;src:url(../fonts/Pretendard-SemiBold.otf);font-weight:600}
+@font-face{font-family:PR;src:url(../fonts/Pretendard-Bold.otf);font-weight:700}
+@font-face{font-family:PR;src:url(../fonts/Pretendard-ExtraBold.otf);font-weight:800}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#888;font-family:PR,'Noto Sans CJK KR',sans-serif;color:var(--c-text)}
+.screen{width:390px;height:844px;position:relative;overflow:hidden;background:var(--c-bg);font-size:16px;line-height:1.5;letter-spacing:-.01em}
+.sb{position:absolute;top:0;left:0;right:0;height:44px;display:flex;justify-content:space-between;align-items:center;padding:0 28px;font-weight:700;font-size:15px;z-index:9}
+.d{font-family:GM;font-weight:700;letter-spacing:-.03em;line-height:1.12}
+.ab{position:absolute}
+.sub{color:var(--c-sub)}
+.btn{font-family:inherit;display:flex;align-items:center;justify-content:center;gap:8px;height:58px;border-radius:16px;background:var(--c-btn);color:var(--c-btnText);font-weight:700;font-size:18px;border:0;width:100%}
+.btn.ghost{background:transparent;color:var(--c-btn);border:2px solid var(--c-btn)}
+.row{display:flex;align-items:center;gap:14px;min-height:56px;border-top:1.5px solid var(--c-border);padding:10px 0}
+.row:last-child{border-bottom:1.5px solid var(--c-border)}
+.row .k{width:84px;color:var(--c-sub);font-size:15px;flex:none}
+.row .v{font-weight:600;font-size:16px;flex:1}
+.lbl{font-size:15px;font-weight:700;color:var(--c-sub);letter-spacing:.02em}
+.badge{display:inline-flex;align-items:center;gap:5px;font-size:15px;font-weight:700;padding:3px 10px;border-radius:8px}
+.tabbar{position:absolute;bottom:0;left:0;right:0;height:84px;display:flex;justify-content:space-around;padding-top:8px;background:var(--c-bg);border-top:1.5px solid var(--c-border)}
+.tabbar div{display:flex;flex-direction:column;align-items:center;font-size:15px;color:var(--c-sub);min-width:64px;min-height:48px}
+.tabbar .on{color:var(--c-btn);font-weight:700}
+svg.i{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;flex:none}
+</style></head><body><div class="screen"><div class="sb"><span>9:41</span><span style="letter-spacing:2px">▮▮▮ ◔ ▭</span></div>
+<div class="ab" style="inset:0;background:var(--c-warnBg)"></div>
+<div class="ab" style="top:64px;left:24px;color:var(--c-warn);font-weight:700;font-size:16px;display:flex;gap:6px;align-items:center"><svg class="i" viewBox="0 0 24 24" style="width:20px;height:20px"><path d="M12 3l10 18H2z"/><path d="M12 10v5M12 18h.01"/></svg>넘어지신 것 같아요</div>
+<div class="ab d" style="top:94px;left:24px;font-size:44px;white-space:nowrap">괜찮으세요?</div>
+<svg class="ab" style="top:200px;left:-40px" width="400" height="400" viewBox="-20 -20 400 400">
+ <circle cx="180" cy="180" r="150" fill="none" stroke="var(--c-clay250)" stroke-width="22"/>
+ <path d="M180,30 A150,150 0 1 1 91.8,58.6" fill="none" stroke="var(--c-warn)" stroke-width="22" stroke-linecap="round"/>
+ <line x1="180.0" y1="12.0" x2="180.0" y2="2.0" stroke="var(--c-warn)" stroke-width="3" stroke-linecap="round"/><line x1="214.9" y1="15.7" x2="216.2" y2="9.8" stroke="var(--c-warn)" stroke-width="2" stroke-linecap="round"/><line x1="248.3" y1="26.5" x2="250.8" y2="21.0" stroke="var(--c-warn)" stroke-width="2" stroke-linecap="round"/><line x1="278.7" y1="44.1" x2="282.3" y2="39.2" stroke="var(--c-warn)" stroke-width="2" stroke-linecap="round"/><line x1="304.8" y1="67.6" x2="309.3" y2="63.6" stroke="var(--c-warn)" stroke-width="2" stroke-linecap="round"/><line x1="325.5" y1="96.0" x2="334.2" y2="91.0" stroke="var(--c-warn)" stroke-width="3" stroke-linecap="round"/><line x1="339.8" y1="128.1" x2="345.5" y2="126.2" stroke="var(--c-warn)" stroke-width="2" stroke-linecap="round"/><line x1="347.1" y1="162.4" x2="353.0" y2="161.8" stroke="var(--c-warn)" stroke-width="2" stroke-linecap="round"/><line x1="347.1" y1="197.6" x2="353.0" y2="198.2" stroke="var(--c-warn)" stroke-width="2" stroke-linecap="round"/><line x1="339.8" y1="231.9" x2="345.5" y2="233.8" stroke="var(--c-warn)" stroke-width="2" stroke-linecap="round"/><line x1="325.5" y1="264.0" x2="334.2" y2="269.0" stroke="var(--c-warn)" stroke-width="3" stroke-linecap="round"/><line x1="304.8" y1="292.4" x2="309.3" y2="296.4" stroke="var(--c-warn)" stroke-width="2" stroke-linecap="round"/><line x1="278.7" y1="315.9" x2="282.3" y2="320.8" stroke="var(--c-warn)" stroke-width="2" stroke-linecap="round"/><line x1="248.3" y1="333.5" x2="250.8" y2="339.0" stroke="var(--c-warn)" stroke-width="2" stroke-linecap="round"/><line x1="214.9" y1="344.3" x2="216.2" y2="350.2" stroke="var(--c-warn)" stroke-width="2" stroke-linecap="round"/><line x1="180.0" y1="348.0" x2="180.0" y2="358.0" stroke="var(--c-warn)" stroke-width="3" stroke-linecap="round"/><line x1="145.1" y1="344.3" x2="143.8" y2="350.2" stroke="var(--c-warn)" stroke-width="2" stroke-linecap="round"/><line x1="111.7" y1="333.5" x2="109.2" y2="339.0" stroke="var(--c-warn)" stroke-width="2" stroke-linecap="round"/><line x1="81.3" y1="315.9" x2="77.7" y2="320.8" stroke="var(--c-warn)" stroke-width="2" stroke-linecap="round"/><line x1="55.2" y1="292.4" x2="50.7" y2="296.4" stroke="var(--c-warn)" stroke-width="2" stroke-linecap="round"/><line x1="34.5" y1="264.0" x2="25.8" y2="269.0" stroke="var(--c-warn)" stroke-width="3" stroke-linecap="round"/><line x1="20.2" y1="231.9" x2="14.5" y2="233.8" stroke="var(--c-warn)" stroke-width="2" stroke-linecap="round"/><line x1="12.9" y1="197.6" x2="7.0" y2="198.2" stroke="var(--c-warn)" stroke-width="2" stroke-linecap="round"/><line x1="12.9" y1="162.4" x2="7.0" y2="161.8" stroke="var(--c-warn)" stroke-width="2" stroke-linecap="round"/><line x1="20.2" y1="128.1" x2="14.5" y2="126.2" stroke="var(--c-warn)" stroke-width="2" stroke-linecap="round"/><line x1="34.5" y1="96.0" x2="25.8" y2="91.0" stroke="var(--c-warn)" stroke-width="3" stroke-linecap="round"/><line x1="55.2" y1="67.6" x2="50.7" y2="63.6" stroke="var(--c-warn)" stroke-width="2" stroke-linecap="round"/><line x1="81.3" y1="44.1" x2="77.7" y2="39.2" stroke="var(--c-warn)" stroke-width="2" stroke-linecap="round"/><line x1="111.7" y1="26.5" x2="109.2" y2="21.0" stroke="var(--c-warn)" stroke-width="2" stroke-linecap="round"/><line x1="145.1" y1="15.7" x2="143.8" y2="9.8" stroke="var(--c-warn)" stroke-width="2" stroke-linecap="round"/>
+</svg>
+<div class="ab d" style="top:290px;left:30px;width:300px;text-align:center;font-size:150px;color:var(--c-text);line-height:1">27</div>
+<div class="ab" style="top:448px;left:30px;width:300px;text-align:center;font-weight:700;font-size:17px;color:var(--c-warn)">초 뒤 보호자에게 알려요</div>
+<img class="ab" src="../assets/house-worry.svg" style="top:480px;right:-54px;width:190px;transform:rotate(-8deg)">
+<div class="ab" style="top:612px;left:24px;width:230px;font-size:15px;line-height:1.55">
+ <div><span class="sub">받는 사람</span> <b>보호자 1명</b></div><div><span class="sub">함께 보내는 내용</span> <b>주소 · 감지 시각</b></div><div class="sub">예시 데이터</div>
+</div>
+<div class="ab" style="left:24px;right:24px;bottom:34px"><button class="btn" style="height:72px;font-size:22px;background:var(--c-text);border-radius:20px"><svg class="i" viewBox="0 0 24 24" style="width:26px;height:26px"><path d="M5 12l5 5 9-10"/></svg>괜찮아요</button></div></div></body></html>
