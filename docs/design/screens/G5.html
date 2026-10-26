@@ -1,0 +1,69 @@
+<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>G5 기록 · 낙상제로</title><style>/* 낙상제로 팔레트 1: 세이지 온기 — 따뜻한 오트밀 크림 위 세이지 그린 — 집처럼 포근한 신뢰 */
+:root{
+  --c-bg: #F5F2EA;
+  --c-surface: #FFFFFF;
+  --c-text: #1E2721;
+  --c-sub: #4A554D;
+  --c-border: #D6D1C4;
+  --c-btn: #35634A;
+  --c-btnText: #FFFFFF;
+  --c-ok: #2E6B3E;
+  --c-okBg: #E3F0E4;
+  --c-warn: #7F5200;
+  --c-warnBg: #FBEFD6;
+  --c-danger: #B3261E;
+  --c-dangerText: #FFFFFF;
+  --c-link: #1F5E8C;
+  --c-focus: var(--c-link);
+  /* 파생 톤(일러스트·면 전용, 기존 토큰 혼합) */
+  --c-sage600: #305742; /* btn 80% + text */
+  --c-sage300: #9FB2A2; /* btn 45% + bg */
+  --c-sage150: #D2D8CD; /* btn 18% + bg */
+  --c-clay500: #B79960; /* warn 55% + warnBg */
+  --c-clay250: #E0CCA7; /* warn 22% + warnBg */
+  --c-sky: #DBE5ED; /* link 16% + surface */
+  --c-night: #1E3A46; /* link 35% + text */
+  --c-blush: #EECBB5; /* danger 18% + warnBg */
+  --c-paper: #FAF8F4; /* bg 50% + surface */
+  /* 규칙: --c-danger 는 낙상 알림 화면 전용 */
+}
+
+@font-face{font-family:GM;src:url(../fonts/GmarketSansBold.otf);font-weight:700}
+@font-face{font-family:GM;src:url(../fonts/GmarketSansMedium.otf);font-weight:500}
+@font-face{font-family:PR;src:url(../fonts/Pretendard-Regular.otf);font-weight:400}
+@font-face{font-family:PR;src:url(../fonts/Pretendard-SemiBold.otf);font-weight:600}
+@font-face{font-family:PR;src:url(../fonts/Pretendard-Bold.otf);font-weight:700}
+@font-face{font-family:PR;src:url(../fonts/Pretendard-ExtraBold.otf);font-weight:800}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#888;font-family:PR,'Noto Sans CJK KR',sans-serif;color:var(--c-text)}
+.screen{width:390px;height:844px;position:relative;overflow:hidden;background:var(--c-bg);font-size:16px;line-height:1.5;letter-spacing:-.01em}
+.sb{position:absolute;top:0;left:0;right:0;height:44px;display:flex;justify-content:space-between;align-items:center;padding:0 28px;font-weight:700;font-size:15px;z-index:9}
+.d{font-family:GM;font-weight:700;letter-spacing:-.03em;line-height:1.12}
+.ab{position:absolute}
+.sub{color:var(--c-sub)}
+.btn{font-family:inherit;display:flex;align-items:center;justify-content:center;gap:8px;height:58px;border-radius:16px;background:var(--c-btn);color:var(--c-btnText);font-weight:700;font-size:18px;border:0;width:100%}
+.btn.ghost{background:transparent;color:var(--c-btn);border:2px solid var(--c-btn)}
+.row{display:flex;align-items:center;gap:14px;min-height:56px;border-top:1.5px solid var(--c-border);padding:10px 0}
+.row:last-child{border-bottom:1.5px solid var(--c-border)}
+.row .k{width:84px;color:var(--c-sub);font-size:15px;flex:none}
+.row .v{font-weight:600;font-size:16px;flex:1}
+.lbl{font-size:15px;font-weight:700;color:var(--c-sub);letter-spacing:.02em}
+.badge{display:inline-flex;align-items:center;gap:5px;font-size:15px;font-weight:700;padding:3px 10px;border-radius:8px}
+.tabbar{position:absolute;bottom:0;left:0;right:0;height:84px;display:flex;justify-content:space-around;padding-top:8px;background:var(--c-bg);border-top:1.5px solid var(--c-border)}
+.tabbar div{display:flex;flex-direction:column;align-items:center;font-size:15px;color:var(--c-sub);min-width:64px;min-height:48px}
+.tabbar .on{color:var(--c-btn);font-weight:700}
+svg.i{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;flex:none}
+</style></head><body><div class="screen"><div class="sb"><span>9:41</span><span style="letter-spacing:2px">▮▮▮ ◔ ▭</span></div>
+<img class="ab" src="../assets/house-calm.svg" style="top:46px;right:-46px;width:170px">
+<div class="ab" style="top:58px;left:24px;font-family:GM;font-weight:700;font-size:17px">기록</div>
+<div class="ab" style="top:96px;left:24px"><div class="lbl">최근 90일 알림</div><div class="d" style="font-size:96px;line-height:1">4<span style="font-size:30px">건</span></div></div>
+<div class="ab" style="top:224px;left:24px;font-size:15px;line-height:1.6"><b style="color:var(--c-ok)">✓ 확인함 3</b> · <b style="color:var(--c-warn)">⚠ 확인 안 됨 1</b> · 평균 확인 3분</div>
+<div class="ab" style="top:270px;left:0;right:0;height:150px;background:var(--c-sage150);border-radius:0 60px 0 0;padding:16px 24px">
+ <div style="display:flex;justify-content:space-between;font-size:15px"><b>주별 알림 · 최근 12주</b><span class="sub">예시 데이터</span></div>
+ <svg width="342" height="96" viewBox="0 0 342 96" style="margin-top:4px"><line x1="8" x2="22" y1="70" y2="70" stroke="var(--c-sub)" stroke-width="2" stroke-linecap="round"/><line x1="36" x2="50" y1="70" y2="70" stroke="var(--c-sub)" stroke-width="2" stroke-linecap="round"/><path d="M64,70 q-1,-30 1,-58 q8,-2 14,1 q1,28 0,57z" fill="var(--c-btn)" stroke="var(--c-text)" stroke-width="2"/><text x="71" y="90" font-size="15" text-anchor="middle" fill="#4A554D" font-family="PR">8/3</text><line x1="92" x2="106" y1="70" y2="70" stroke="var(--c-sub)" stroke-width="2" stroke-linecap="round"/><line x1="120" x2="134" y1="70" y2="70" stroke="var(--c-sub)" stroke-width="2" stroke-linecap="round"/><line x1="148" x2="162" y1="70" y2="70" stroke="var(--c-sub)" stroke-width="2" stroke-linecap="round"/><path d="M176,70 q-1,-30 1,-58 q8,-2 14,1 q1,28 0,57z" fill="var(--c-btn)" stroke="var(--c-text)" stroke-width="2"/><text x="183" y="90" font-size="15" text-anchor="middle" fill="#4A554D" font-family="PR">9/3</text><line x1="204" x2="218" y1="70" y2="70" stroke="var(--c-sub)" stroke-width="2" stroke-linecap="round"/><line x1="232" x2="246" y1="70" y2="70" stroke="var(--c-sub)" stroke-width="2" stroke-linecap="round"/><path d="M260,70 q-1,-30 1,-58 q8,-2 14,1 q1,28 0,57z" fill="var(--c-warn)" stroke="var(--c-text)" stroke-width="2"/><text x="267" y="90" font-size="15" text-anchor="middle" fill="#4A554D" font-family="PR">9/28</text><line x1="288" x2="302" y1="70" y2="70" stroke="var(--c-sub)" stroke-width="2" stroke-linecap="round"/><path d="M316,70 q-1,-30 1,-58 q8,-2 14,1 q1,28 0,57z" fill="var(--c-btn)" stroke="var(--c-text)" stroke-width="2"/><text x="323" y="90" font-size="15" text-anchor="middle" fill="#4A554D" font-family="PR">10/21</text></svg>
+</div>
+<div class="ab" style="top:436px;left:24px;right:24px;display:flex;gap:22px;font-size:16px"><b style="border-bottom:3px solid var(--c-btn);padding:10px 0;color:var(--c-btn)">전체 4</b><span style="padding:10px 0">확인함 3</span><span style="padding:10px 0">확인 안 됨 1</span></div>
+<div class="ab" style="top:494px;left:24px;right:24px">
+ <div class="row" style="min-height:54px;padding:6px 0"><div style="width:96px;font-size:15px"><b>10월 21일</b><br><span class="sub">오전 9:12</span></div><div style="flex:1;font-size:15px">2분 뒤 확인</div><span style="color:var(--c-ok);font-weight:700;font-size:15px">✓ 확인함</span></div><div class="row" style="min-height:54px;padding:6px 0"><div style="width:96px;font-size:15px"><b>10월 9일</b><br><span class="sub">오후 7:30</span></div><div style="flex:1;font-size:15px">‘가고 있어요’</div><span style="color:var(--c-ok);font-weight:700;font-size:15px">✓ 확인함</span></div><div class="row" style="min-height:54px;padding:6px 0"><div style="width:96px;font-size:15px"><b>9월 28일</b><br><span class="sub">새벽 2:05</span></div><div style="flex:1;font-size:15px">아무도 안 봤어요</div><span class="badge" style="background:var(--c-warnBg);color:var(--c-warn)"><svg class="i" viewBox="0 0 24 24" style="width:16px;height:16px"><path d="M12 3l10 18H2z"/><path d="M12 10v5M12 18h.01"/></svg>확인 안 됨</span></div><div class="row" style="min-height:54px;padding:6px 0"><div style="width:96px;font-size:15px"><b>9월 3일</b><br><span class="sub">오후 1:47</span></div><div style="flex:1;font-size:15px">5분 뒤 확인</div><span style="color:var(--c-ok);font-weight:700;font-size:15px">✓ 확인함</span></div>
+</div>
+<div class="tabbar"><div class=""><svg class="i" viewBox="0 0 24 24" style="width:24px;height:24px"><path d="M4 11l8-7 8 7v9H4z"/></svg>홈</div><div class="on"><svg class="i" viewBox="0 0 24 24" style="width:24px;height:24px"><path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"/></svg>기록</div><div class=""><svg class="i" viewBox="0 0 24 24" style="width:24px;height:24px"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M5 19l2-2M17 7l2-2"/></svg>설정</div></div></div></body></html>

@@ -1,0 +1,29 @@
+/* 낙상제로 팔레트 1: 세이지 온기 — 따뜻한 오트밀 크림 위 세이지 그린 — 집처럼 포근한 신뢰 */
+:root{
+  --c-bg: #F5F2EA;
+  --c-surface: #FFFFFF;
+  --c-text: #1E2721;
+  --c-sub: #4A554D;
+  --c-border: #D6D1C4;
+  --c-btn: #35634A;
+  --c-btnText: #FFFFFF;
+  --c-ok: #2E6B3E;
+  --c-okBg: #E3F0E4;
+  --c-warn: #7F5200;
+  --c-warnBg: #FBEFD6;
+  --c-danger: #B3261E;
+  --c-dangerText: #FFFFFF;
+  --c-link: #1F5E8C;
+  --c-focus: var(--c-link);
+  /* 파생 톤(일러스트·면 전용, 기존 토큰 혼합) */
+  --c-sage600: #305742; /* btn 80% + text */
+  --c-sage300: #9FB2A2; /* btn 45% + bg */
+  --c-sage150: #D2D8CD; /* btn 18% + bg */
+  --c-clay500: #B79960; /* warn 55% + warnBg */
+  --c-clay250: #E0CCA7; /* warn 22% + warnBg */
+  --c-sky: #DBE5ED; /* link 16% + surface */
+  --c-night: #1E3A46; /* link 35% + text */
+  --c-blush: #EECBB5; /* danger 18% + warnBg */
+  --c-paper: #FAF8F4; /* bg 50% + surface */
+  /* 규칙: --c-danger 는 낙상 알림 화면 전용 */
+}
