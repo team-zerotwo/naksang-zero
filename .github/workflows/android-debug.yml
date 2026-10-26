@@ -18,6 +18,9 @@ jobs:
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          # The default list still asks for the removed "tools" package.
+          packages: platform-tools platforms;android-34 build-tools;34.0.0
 
       - name: Build debug APK and unit tests
         working-directory: android
