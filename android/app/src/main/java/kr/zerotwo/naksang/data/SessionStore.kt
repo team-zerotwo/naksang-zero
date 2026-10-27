@@ -11,6 +11,7 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
+import kotlin.math.abs
 import kotlinx.coroutines.flow.first
 import kr.zerotwo.naksang.BuildConfig
 import kr.zerotwo.naksang.detect.FallConfig
@@ -25,15 +26,7 @@ class SessionStore(private val context: Context) {
 
     suspend fun load(): AppState {
         val prefs = context.sessionDataStore.data.first()
-        val config = FallConfig(
-            dropWindowMs = prefs.longOr(Keys.dropWindow, FallConfig().dropWindowMs),
-            minDrop = prefs.floatOr(Keys.minDrop, FallConfig().minDrop),
-            maxLieAngleDeg = prefs.floatOr(Keys.maxLie, FallConfig().maxLieAngleDeg),
-            lieAngleReleaseDeg = prefs.floatOr(Keys.lieRelease, FallConfig().lieAngleReleaseDeg),
-            uprightAngleDeg = prefs.floatOr(Keys.upright, FallConfig().uprightAngleDeg),
-            stillDurationMs = prefs.longOr(Keys.stillMs, FallConfig().stillDurationMs),
-            stillMovement = prefs.floatOr(Keys.stillMove, FallConfig().stillMovement),
-        )
+        val config = storedFallConfig(prefs)
         val phase = prefs[Keys.phase]?.let { runCatching { Phase.valueOf(it) }.getOrNull() } ?: Phase.NEED_CONNECT
         return AppState(
             phase = phase,
@@ -106,6 +99,41 @@ class SessionStore(private val context: Context) {
         if (raw.isBlank()) return emptyList()
         return runCatching { gson.fromJson<List<PendingFall>>(raw, queueType) }.getOrNull().orEmpty()
     }
+
+    /**
+     * Phones that saved the previous shipped tuple (800 ms, drop 0.18, lie 28°)
+     * pick up the validated defaults. A value the person edited in settings stays.
+     * The steep-torso path is not a settings field; it always comes from [FallConfig].
+     */
+    private fun storedFallConfig(prefs: Preferences): FallConfig {
+        val defaults = FallConfig()
+        val dropWindow = prefs.longOr(Keys.dropWindow, defaults.dropWindowMs)
+        val minDrop = prefs.floatOr(Keys.minDrop, defaults.minDrop)
+        val maxLie = prefs.floatOr(Keys.maxLie, defaults.maxLieAngleDeg)
+        val release = prefs.floatOr(Keys.lieRelease, defaults.lieAngleReleaseDeg)
+        val upright = prefs.floatOr(Keys.upright, defaults.uprightAngleDeg)
+        val stillMs = prefs.longOr(Keys.stillMs, defaults.stillDurationMs)
+        val stillMove = prefs.floatOr(Keys.stillMove, defaults.stillMovement)
+        val previousShipped = dropWindow == 800L &&
+            near(minDrop, 0.18f) &&
+            near(maxLie, 28f) &&
+            near(release, 45f) &&
+            near(upright, 58f) &&
+            stillMs == 2_000L &&
+            near(stillMove, 0.035f)
+        if (previousShipped || prefs[Keys.dropWindow] == null) return defaults
+        return defaults.copy(
+            dropWindowMs = dropWindow,
+            minDrop = minDrop,
+            maxLieAngleDeg = maxLie,
+            lieAngleReleaseDeg = release,
+            uprightAngleDeg = upright,
+            stillDurationMs = stillMs,
+            stillMovement = stillMove,
+        )
+    }
+
+    private fun near(value: Float, expected: Float) = abs(value - expected) < 0.001f
 
     private fun Preferences.longOr(key: Preferences.Key<Long>, default: Long) = this[key] ?: default
     private fun Preferences.floatOr(key: Preferences.Key<Float>, default: Float) = this[key] ?: default

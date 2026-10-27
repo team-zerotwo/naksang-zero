@@ -2,8 +2,8 @@ package kr.zerotwo.naksang.detect
 
 import java.io.File
 import java.util.Locale
-import kotlin.math.hypot
 import kotlin.math.max
+import kotlin.math.min
 
 /**
  * Test-only replay of landmark CSVs through the shipped [FallDetector].
@@ -41,6 +41,10 @@ internal object CaucaFallReplay {
         val onsetMs: Long?,
         val durationMs: Long?,
         val csvFile: File,
+        val dataset: String = "",
+        val view: String = "",
+        val camera: String = "",
+        val direction: String = "",
     )
 
     data class VideoEval(
@@ -60,6 +64,11 @@ internal object CaucaFallReplay {
         val tailAfterOnsetMs: Long?,
         val unblockedBy: List<String>,
         val blocker: String?,
+        val minTorsoLenRatio: Float?,
+        val minBodyHeightRatio: Float?,
+        val maxHeadDrop: Float?,
+        val maxHipDrop: Float?,
+        val maxDrop1600: Float?,
     )
 
     fun writeCsv(file: File, frames: List<ReplayFrame>) {
@@ -134,9 +143,15 @@ internal object CaucaFallReplay {
         val csvFile = indexOf("csv_file")
         val onset = indexOf("onset_ms")
         val duration = indexOf("duration_ms")
+        fun optional(name: String): Int = header.indexOf(name)
+        val dataset = optional("dataset")
+        val view = optional("view")
+        val camera = optional("camera")
+        val direction = optional("direction")
         return rows.drop(1).map { cells ->
             val name = cells[csvFile]
             val file = if (File(name).isAbsolute) File(name) else File(csvDir, name)
+            fun cell(index: Int): String = if (index >= 0 && index < cells.size) cells[index] else ""
             VideoMeta(
                 videoId = cells[id],
                 subject = cells[subject],
@@ -146,9 +161,29 @@ internal object CaucaFallReplay {
                 onsetMs = cells[onset].toLongOrNull(),
                 durationMs = cells[duration].toLongOrNull(),
                 csvFile = file,
+                dataset = cell(dataset),
+                view = cell(view),
+                camera = cell(camera),
+                direction = cell(direction),
             )
         }
     }
+
+    /** Rule shipped before the view-robust signals. Kept so a replay can compare. */
+    fun legacyFallConfig(): FallConfig = FallConfig(
+        dropWindowMs = 800,
+        minDrop = 0.18f,
+        maxLieAngleDeg = 28f,
+        lieAngleReleaseDeg = 45f,
+        uprightAngleDeg = 58f,
+        stillDurationMs = 2_000,
+        stillMovement = 0.035f,
+        maxTorsoLenRatio = 0f,
+        maxBodyHeightRatio = 0f,
+        minDropInTorso = 0f,
+        minLimbDrop = 0f,
+        steepMinDrop = 0f,
+    )
 
     fun evaluateAndWrite(videos: List<VideoMeta>, outDir: File) {
         if (videos.isEmpty()) error("no videos to replay")
@@ -158,10 +193,14 @@ internal object CaucaFallReplay {
             meta to readCsv(meta.csvFile)
         }
         val config = FallConfig()
+        val previous = legacyFallConfig()
         val evals = loaded.map { (meta, frames) -> evaluate(frames, meta, config) }
+        val evalsPrevious = loaded.map { (meta, frames) -> evaluate(frames, meta, previous) }
         writePerVideo(File(outDir, "per_video.csv"), evals)
-        writeSweep(File(outDir, "threshold_sweep.csv"), loaded, config)
+        writePerVideo(File(outDir, "per_video_previous.csv"), evalsPrevious)
+        writeSweep(File(outDir, "threshold_sweep.csv"), loaded, config, previous)
         File(outDir, "shipped_config.txt").writeText(config.toString() + "\n")
+        File(outDir, "previous_config.txt").writeText(previous.toString() + "\n")
     }
 
     fun evaluate(frames: List<ReplayFrame>, meta: VideoMeta, config: FallConfig = FallConfig()): VideoEval {
@@ -204,6 +243,11 @@ internal object CaucaFallReplay {
             tailAfterOnsetMs = tail,
             unblockedBy = unblocked,
             blocker = blocker,
+            minTorsoLenRatio = stats.minTorsoLenRatio,
+            minBodyHeightRatio = stats.minBodyHeightRatio,
+            maxHeadDrop = stats.maxHeadDrop,
+            maxHipDrop = stats.maxHipDrop,
+            maxDrop1600 = stats.maxDrop1600,
         )
     }
 
@@ -223,13 +267,16 @@ internal object CaucaFallReplay {
         val longestGapMs: Long?,
         val edgeFraction: Float?,
         val poseFractionAfterLowest: Float?,
+        val minTorsoLenRatio: Float?,
+        val minBodyHeightRatio: Float?,
+        val maxHeadDrop: Float?,
+        val maxHipDrop: Float?,
+        val maxDrop1600: Float?,
     )
 
     private data class RawSample(
         val t: Long,
-        val cy: Float,
-        val angleDeg: Float,
-        val span: Float,
+        val pose: PoseMeasure,
         val edge: Boolean,
     )
 
@@ -241,14 +288,11 @@ internal object CaucaFallReplay {
         for (frame in frames) {
             if (!frame.poseFound) continue
             val points = frame.joints.toJointPoints()
-            val axis = torsoAxis(points) ?: continue
+            val pose = poseMeasure(points) ?: continue
             poseFrames += 1
-            val span = shoulderHipSpan(points)
             series += RawSample(
                 t = frame.timestampMs,
-                cy = axis.cy,
-                angleDeg = axis.angleDeg,
-                span = span ?: 0f,
+                pose = pose,
                 edge = nearEdge(points),
             )
             val previous = previousPose
@@ -256,17 +300,30 @@ internal object CaucaFallReplay {
             previousPose = frame.timestampMs
         }
         if (series.isEmpty()) {
-            return PoseStats(0, null, null, null, null, null, null)
+            return PoseStats(0, null, null, null, null, null, null, null, null, null, null, null)
         }
         var maxDrop = Float.NEGATIVE_INFINITY
+        var maxDrop1600 = Float.NEGATIVE_INFINITY
+        var minLenRatio = Float.POSITIVE_INFINITY
+        var minHeightRatio = Float.POSITIVE_INFINITY
+        var maxHeadDrop = Float.NEGATIVE_INFINITY
+        var maxHipDrop = Float.NEGATIVE_INFINITY
         val window = config.dropWindowMs
         for (sample in series) {
-            val ref = series.lastOrNull { it.t <= sample.t - window } ?: continue
-            if (sample.t - ref.t <= window + 250) {
-                maxDrop = max(maxDrop, sample.cy - ref.cy)
-            }
+            maxDrop = max(maxDrop, windowDrop(series, sample, window))
+            maxDrop1600 = max(maxDrop1600, windowDrop(series, sample, 1_600L))
+            val ref = series.lastOrNull { it.t <= sample.t - 1_600L } ?: continue
+            if (sample.t - ref.t > 1_600L + 250) continue
+            if (ref.pose.angleDeg < 58f || ref.pose.torsoLen < 0.04f) continue
+            minLenRatio = min(minLenRatio, sample.pose.torsoLen / ref.pose.torsoLen)
+            val height = bodyHeightRatio(ref.pose, sample.pose)
+            if (height != null) minHeightRatio = min(minHeightRatio, height)
+            val nose = sample.pose.noseY
+            val refNose = ref.pose.noseY
+            if (nose != null && refNose != null) maxHeadDrop = max(maxHeadDrop, nose - refNose)
+            maxHipDrop = max(maxHipDrop, sample.pose.hipY - ref.pose.hipY)
         }
-        val lowest = series.maxByOrNull { it.cy } ?: return PoseStats(poseFrames, null, null, null, null, null, null)
+        val lowest = series.maxByOrNull { it.pose.cy } ?: return PoseStats(poseFrames, null, null, null, null, null, null, null, null, null, null, null)
         val after = frames.filter { it.timestampMs > lowest.t }
         val afterFraction = if (after.isEmpty()) {
             null
@@ -277,29 +334,34 @@ internal object CaucaFallReplay {
         }
         return PoseStats(
             poseFrames = poseFrames,
-            medianTorsoLen = median(series.map { it.span }),
-            minAngleDeg = series.minOf { it.angleDeg },
-            maxDrop = if (maxDrop == Float.NEGATIVE_INFINITY) null else maxDrop,
+            medianTorsoLen = median(series.map { it.pose.torsoLen }),
+            minAngleDeg = series.minOf { it.pose.angleDeg },
+            maxDrop = finiteOrNull(maxDrop),
             longestGapMs = if (poseFrames >= 2) longestGap else 0L,
             edgeFraction = series.count { it.edge }.toFloat() / series.size,
             poseFractionAfterLowest = afterFraction,
+            minTorsoLenRatio = finiteOrNull(minLenRatio, positive = true),
+            minBodyHeightRatio = finiteOrNull(minHeightRatio, positive = true),
+            maxHeadDrop = finiteOrNull(maxHeadDrop),
+            maxHipDrop = finiteOrNull(maxHipDrop),
+            maxDrop1600 = finiteOrNull(maxDrop1600),
         )
     }
 
-    /** Shoulder-group to hip-group distance. Descriptive only; the decision uses [torsoAxis]. */
-    private fun shoulderHipSpan(landmarks: List<JointPoint>): Float? {
-        val shoulders = ArrayList<JointPoint>(2)
-        val hips = ArrayList<JointPoint>(2)
-        landmarks.getOrNull(PoseJoints.LEFT_SHOULDER)?.takeIf { it.visibility >= DEFAULT_MIN_VISIBILITY }?.let { shoulders += it }
-        landmarks.getOrNull(PoseJoints.RIGHT_SHOULDER)?.takeIf { it.visibility >= DEFAULT_MIN_VISIBILITY }?.let { shoulders += it }
-        landmarks.getOrNull(PoseJoints.LEFT_HIP)?.takeIf { it.visibility >= DEFAULT_MIN_VISIBILITY }?.let { hips += it }
-        landmarks.getOrNull(PoseJoints.RIGHT_HIP)?.takeIf { it.visibility >= DEFAULT_MIN_VISIBILITY }?.let { hips += it }
-        if (shoulders.isEmpty() || hips.isEmpty()) return null
-        val sx = shoulders.sumOf { it.x.toDouble() }.toFloat() / shoulders.size
-        val sy = shoulders.sumOf { it.y.toDouble() }.toFloat() / shoulders.size
-        val hx = hips.sumOf { it.x.toDouble() }.toFloat() / hips.size
-        val hy = hips.sumOf { it.y.toDouble() }.toFloat() / hips.size
-        return hypot((sx - hx).toDouble(), (sy - hy).toDouble()).toFloat()
+    private fun windowDrop(series: List<RawSample>, sample: RawSample, window: Long): Float {
+        val ref = series.lastOrNull { it.t <= sample.t - window } ?: return Float.NEGATIVE_INFINITY
+        if (sample.t - ref.t > window + 250) return Float.NEGATIVE_INFINITY
+        return sample.pose.cy - ref.pose.cy
+    }
+
+    private fun finiteOrNull(value: Float, positive: Boolean = false): Float? {
+        if (positive) {
+            if (value == Float.POSITIVE_INFINITY) return null
+        } else if (value == Float.NEGATIVE_INFINITY) {
+            return null
+        }
+        if (value.isNaN()) return null
+        return value
     }
 
     private fun nearEdge(landmarks: List<JointPoint>): Boolean {
@@ -324,6 +386,10 @@ internal object CaucaFallReplay {
         "drop_window" to base.copy(dropWindowMs = 2_000),
         "upright" to base.copy(uprightAngleDeg = 30f),
         "person_lost_grace" to base.copy(personLostGraceMs = 4_000, trackingGapResetMs = 4_000),
+        "torso_len" to base.copy(maxTorsoLenRatio = 0.80f),
+        "body_height" to base.copy(maxBodyHeightRatio = 0.70f),
+        "drop_in_torso" to base.copy(minDropInTorso = 0.50f),
+        "limb_drop" to base.copy(minLimbDrop = 0.06f),
     )
 
     private fun loose(base: FallConfig) = base.copy(
@@ -335,6 +401,10 @@ internal object CaucaFallReplay {
         uprightAngleDeg = 30f,
         personLostGraceMs = 4_000,
         trackingGapResetMs = 4_000,
+        maxTorsoLenRatio = 0.80f,
+        maxBodyHeightRatio = 0.70f,
+        minDropInTorso = 0.50f,
+        minLimbDrop = 0.06f,
     )
 
     private data class SweepRow(
@@ -350,45 +420,81 @@ internal object CaucaFallReplay {
         val kneelingTotal: Int,
         val medianDelayMs: Long?,
         val byType: Map<String, Int>,
+        val fallsByView: String,
+        val adlByView: String,
     )
 
     private fun writeSweep(
         file: File,
         loaded: List<Pair<VideoMeta, List<ReplayFrame>>>,
         shipped: FallConfig,
+        previous: FallConfig,
     ) {
         val rows = ArrayList<SweepRow>()
+        rows += sweepRow("previous", previous, loaded)
         rows += sweepRow("default", shipped, loaded)
-        for (minDrop in listOf(0.08f, 0.10f, 0.12f, 0.14f, 0.16f, 0.18f, 0.22f, 0.26f, 0.30f)) {
+        for (minDrop in listOf(0.08f, 0.10f, 0.12f, 0.14f, 0.18f, 0.22f, 0.30f)) {
             rows += sweepRow("minDrop", shipped.copy(minDrop = minDrop), loaded)
         }
-        for (angle in listOf(18f, 22f, 28f, 35f, 42f, 50f)) {
-            rows += sweepRow("maxLieAngleDeg", shipped.copy(maxLieAngleDeg = angle), loaded)
+        for (angle in listOf(28f, 35f, 45f, 55f)) {
+            rows += sweepRow("maxLieAngleDeg", shipped.copy(maxLieAngleDeg = angle, lieAngleReleaseDeg = angle + 17f), loaded)
         }
-        for (still in listOf(0.02f, 0.035f, 0.05f, 0.08f, 0.12f)) {
+        for (still in listOf(0.035f, 0.050f, 0.080f)) {
             rows += sweepRow("stillMovement", shipped.copy(stillMovement = still), loaded)
         }
-        for (window in listOf(400L, 600L, 800L, 1200L, 1600L, 2000L)) {
+        for (window in listOf(800L, 1200L, 1600L, 2000L)) {
             rows += sweepRow("dropWindowMs", shipped.copy(dropWindowMs = window), loaded)
         }
-        val drops = listOf(0.10f, 0.12f, 0.14f, 0.16f, 0.18f, 0.22f, 0.26f)
-        val angles = listOf(20f, 28f, 36f, 45f)
-        val stills = listOf(0.02f, 0.035f, 0.05f, 0.08f)
-        val windows = listOf(600L, 800L, 1200L, 1600L)
+        for (ratio in listOf(0f, 0.50f, 0.60f, 0.70f, 0.80f)) {
+            rows += sweepRow("maxTorsoLenRatio", shipped.copy(maxTorsoLenRatio = ratio), loaded)
+        }
+        for (ratio in listOf(0f, 0.40f, 0.45f, 0.55f, 0.65f)) {
+            rows += sweepRow("maxBodyHeightRatio", shipped.copy(maxBodyHeightRatio = ratio), loaded)
+        }
+        for (drop in listOf(0f, 0.70f, 0.90f, 1.20f)) {
+            rows += sweepRow("minDropInTorso", shipped.copy(minDropInTorso = drop), loaded)
+        }
+        for (drop in listOf(0f, 0.08f, 0.12f, 0.18f)) {
+            rows += sweepRow("minLimbDrop", shipped.copy(minLimbDrop = drop), loaded)
+        }
+        for (drop in listOf(0f, 0.18f)) {
+            rows += sweepRow("steepMinDrop", shipped.copy(steepMinDrop = drop), loaded)
+        }
+        val drops = listOf(0.10f, 0.14f, 0.18f)
+        val angles = listOf(28f, 40f, 50f)
+        val windows = listOf(800L, 1_600L)
+        val lengths = listOf(0f, 0.55f, 0.70f)
+        val heights = listOf(0f, 0.45f, 0.60f)
+        val norms = listOf(0f, 0.90f)
+        val limbs = listOf(0f, 0.12f)
+        val stills = listOf(0.035f, 0.050f)
         for (minDrop in drops) {
             for (angle in angles) {
-                for (still in stills) {
-                    for (window in windows) {
-                        rows += sweepRow(
-                            "grid",
-                            shipped.copy(
-                                minDrop = minDrop,
-                                maxLieAngleDeg = angle,
-                                stillMovement = still,
-                                dropWindowMs = window,
-                            ),
-                            loaded,
-                        )
+                for (window in windows) {
+                    for (length in lengths) {
+                        for (height in heights) {
+                            for (norm in norms) {
+                                for (limb in limbs) {
+                                    for (still in stills) {
+                                        rows += sweepRow(
+                                            "grid",
+                                            shipped.copy(
+                                                minDrop = minDrop,
+                                                maxLieAngleDeg = angle,
+                                                lieAngleReleaseDeg = angle + 17f,
+                                                dropWindowMs = window,
+                                                maxTorsoLenRatio = length,
+                                                maxBodyHeightRatio = height,
+                                                minDropInTorso = norm,
+                                                minLimbDrop = limb,
+                                                stillMovement = still,
+                                            ),
+                                            loaded,
+                                        )
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -408,8 +514,11 @@ internal object CaucaFallReplay {
         file.bufferedWriter().use { writer ->
             writer.append(
                 "slice,min_drop,max_lie_angle_deg,still_movement,drop_window_ms," +
+                    "max_torso_len_ratio,max_body_height_ratio,min_drop_in_torso,min_limb_drop," +
+                    "steep_min_drop,steep_min_angle_deg," +
                     "falls_detected,falls_total,adl_false,adl_total," +
                     "sitting_false,sitting_total,kneeling_false,kneeling_total,median_delay_ms," +
+                    "falls_by_view,adl_by_view," +
                     types.joinToString(","),
             )
             writer.append('\n')
@@ -423,6 +532,18 @@ internal object CaucaFallReplay {
                 writer.append(formatFloat(row.config.stillMovement))
                 writer.append(',')
                 writer.append(row.config.dropWindowMs.toString())
+                writer.append(',')
+                writer.append(formatFloat(row.config.maxTorsoLenRatio))
+                writer.append(',')
+                writer.append(formatFloat(row.config.maxBodyHeightRatio))
+                writer.append(',')
+                writer.append(formatFloat(row.config.minDropInTorso))
+                writer.append(',')
+                writer.append(formatFloat(row.config.minLimbDrop))
+                writer.append(',')
+                writer.append(formatFloat(row.config.steepMinDrop))
+                writer.append(',')
+                writer.append(formatFloat(row.config.steepMinAngleDeg))
                 writer.append(',')
                 writer.append(row.fallDetected.toString())
                 writer.append(',')
@@ -441,6 +562,10 @@ internal object CaucaFallReplay {
                 writer.append(row.kneelingTotal.toString())
                 writer.append(',')
                 writer.append(row.medianDelayMs?.toString() ?: "")
+                writer.append(',')
+                writer.append(row.fallsByView)
+                writer.append(',')
+                writer.append(row.adlByView)
                 for (type in types) {
                     writer.append(',')
                     writer.append((row.byType[type] ?: 0).toString())
@@ -465,19 +590,30 @@ internal object CaucaFallReplay {
         var kneelingTotal = 0
         val delays = ArrayList<Long>()
         val byType = HashMap<String, Int>()
+        val fallViewHits = HashMap<String, Int>()
+        val fallViewTotal = HashMap<String, Int>()
+        val adlViewHits = HashMap<String, Int>()
+        val adlViewTotal = HashMap<String, Int>()
         for ((meta, frames) in loaded) {
             val firedAt = firstFire(frames, config)
             val fired = firedAt != null
+            val view = meta.view.ifBlank { "unspecified" }
             if (meta.kind == "fall") {
                 fallTotal += 1
+                fallViewTotal[view] = (fallViewTotal[view] ?: 0) + 1
                 if (fired) {
                     fallDetected += 1
+                    fallViewHits[view] = (fallViewHits[view] ?: 0) + 1
                     val onset = meta.onsetMs
                     if (onset != null) delays += firedAt - onset
                 }
             } else {
                 adlTotal += 1
-                if (fired) adlFalse += 1
+                adlViewTotal[view] = (adlViewTotal[view] ?: 0) + 1
+                if (fired) {
+                    adlFalse += 1
+                    adlViewHits[view] = (adlViewHits[view] ?: 0) + 1
+                }
             }
             if (meta.activityType == "sitting") {
                 sittingTotal += 1
@@ -502,7 +638,16 @@ internal object CaucaFallReplay {
             kneelingTotal = kneelingTotal,
             medianDelayMs = medianLong(delays),
             byType = byType,
+            fallsByView = viewTally(fallViewHits, fallViewTotal),
+            adlByView = viewTally(adlViewHits, adlViewTotal),
         )
+    }
+
+    private fun viewTally(hits: Map<String, Int>, total: Map<String, Int>): String {
+        if (total.isEmpty()) return ""
+        return total.keys.sorted().joinToString("|") { view ->
+            "${view}:${hits[view] ?: 0}/${total[view] ?: 0}"
+        }
     }
 
     private fun writePerVideo(file: File, evals: List<VideoEval>) {
@@ -511,7 +656,9 @@ internal object CaucaFallReplay {
                 "video_id,subject,activity,kind,activity_type,onset_ms,duration_ms," +
                     "frames,pose_frames,pose_fraction,detected,detected_at_ms,delay_ms," +
                     "blocker,unblocked_by,median_torso_len,min_angle_deg,max_drop_800," +
-                    "longest_gap_ms,edge_fraction,pose_fraction_after_lowest,tail_after_onset_ms",
+                    "longest_gap_ms,edge_fraction,pose_fraction_after_lowest,tail_after_onset_ms," +
+                    "dataset,view,camera,direction,min_torso_len_ratio,min_body_height_ratio," +
+                    "max_head_drop,max_hip_drop,max_drop_1600",
             )
             writer.append('\n')
             for (row in evals) {
@@ -538,6 +685,15 @@ internal object CaucaFallReplay {
                     formatFloat(row.edgeFraction),
                     formatFloat(row.poseFractionAfterLowest),
                     row.tailAfterOnsetMs?.toString() ?: "",
+                    row.meta.dataset,
+                    row.meta.view,
+                    row.meta.camera,
+                    row.meta.direction,
+                    formatFloat(row.minTorsoLenRatio),
+                    formatFloat(row.minBodyHeightRatio),
+                    formatFloat(row.maxHeadDrop),
+                    formatFloat(row.maxHipDrop),
+                    formatFloat(row.maxDrop1600),
                 )
                 writer.append(cells.joinToString(",") { csvEscape(it) })
                 writer.append('\n')

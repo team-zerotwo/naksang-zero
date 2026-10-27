@@ -38,7 +38,7 @@ class CaucaFallReplayTest {
 
     @Test
     fun `하강이 작으면 min_drop 이 막는다`() {
-        val shortFall = shiftY(lying(), -0.10f)
+        val shortFall = shiftY(lying(), -0.12f)
         val frames = hold(stand(), shortFall, leadIn = 1_000, transitionEnd = 1_500, until = 5_000)
         val eval = CaucaFallReplay.evaluate(frames, meta("small_drop", "fall", "forward", onsetMs = 1_500, durationMs = 5_000))
         assertEquals(false, eval.detected)

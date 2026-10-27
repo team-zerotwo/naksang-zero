@@ -27,7 +27,8 @@ class FallDetectorTest {
 
     @Test
     fun `웅크리기 = 낙상 아님`() {
-        // Fast drop, torso still clearly above the lying angle.
+        // The center drops past the flat-pose threshold, but the torso stays near vertical
+        // and the drop is under the along-view threshold.
         val fired = FallDetector().feed(hold(stand(), squatting(), leadIn = 1_000, transitionEnd = 1_600, until = 6_000))
         assertNull("웅크리기는 낙상이 아닙니다. fired=$fired", fired)
     }
@@ -75,7 +76,7 @@ class FallDetectorTest {
 
     @Test
     fun `기준값을 높이면 같은 넘어짐도 낙상이 아님`() {
-        val strict = FallConfig(minDrop = 0.5f)
+        val strict = FallConfig(minDrop = 0.5f, minDropInTorso = 0f, minLimbDrop = 0f, steepMinDrop = 0f)
         val fired = FallDetector(strict).feed(hold(stand(), lying(), 1_000, 1_500, 5_000))
         assertNull(fired)
     }
@@ -103,10 +104,10 @@ class FallDetectorTest {
 
     @Test
     fun `정지 중 떨림은 낙상을 끊지 않는다`() {
-        // ±0.04 is above stillMovement (0.035). Smoothing keeps the center inside it.
+        // ±0.06 is above stillMovement (0.050). Smoothing keeps the center inside it.
         val stable = hold(stand(), lying(), 1_000, 1_500, 2_400)
         val jitter = (2_500L..6_000L step 100L).mapIndexed { index, t ->
-            val dy = if (index % 2 == 0) 0.04f else -0.04f
+            val dy = if (index % 2 == 0) 0.06f else -0.06f
             t to shift(lying(), dx = 0f, dy = dy)
         }
         val fired = FallDetector().feed(stable + jitter)
@@ -162,6 +163,55 @@ class FallDetectorTest {
         shouldersOnly[PoseJoints.LEFT_HIP][2] = 0f
         shouldersOnly[PoseJoints.RIGHT_HIP][2] = 0f
         assertNull(torsoCenter(shouldersOnly))
+    }
+
+    @Test
+    fun `카메라 방향으로 누우면 몸통이 짧아져 낙상`() {
+        val frames = hold(stand(), foreshortened(), leadIn = 1_000, transitionEnd = 1_500, until = 5_000)
+        val fired = FallDetector().feed(frames)
+        assertTrue("시선 방향 낙상입니다. fired=$fired", fired != null)
+        val legacy = FallConfig(
+            dropWindowMs = 800,
+            minDrop = 0.18f,
+            maxLieAngleDeg = 28f,
+            lieAngleReleaseDeg = 45f,
+            stillMovement = 0.035f,
+            maxTorsoLenRatio = 0f,
+            maxBodyHeightRatio = 0f,
+            minDropInTorso = 0f,
+            minLimbDrop = 0f,
+            steepMinDrop = 0f,
+        )
+        assertNull(FallDetector(legacy).feed(frames))
+    }
+
+    @Test
+    fun `시선 방향 낙상은 누워 있는 동안 한 번만`() {
+        val detector = FallDetector()
+        val first = detector.feed(hold(stand(), foreshortened(), 1_000, 1_500, 5_000))
+        assertTrue(first != null)
+        val still = (5_100L..8_000L step 100L).map { it to foreshortened() }
+        assertNull(detector.feed(still))
+    }
+
+    @Test
+    fun `시선 방향의 급한 하강은 낙상이고 앉기는 아니다`() {
+        val fall = hold(
+            body(stand()),
+            body(shortBody(), noseY = 0.50f, ankleY = 0.80f),
+            1_000,
+            1_500,
+            5_000,
+        )
+        assertTrue(FallDetector().feed(fall) != null)
+        val sit = hold(
+            body(stand()),
+            body(seatedBody(), noseY = 0.22f, ankleY = 0.72f),
+            1_000,
+            2_200,
+            6_000,
+        )
+        assertNull(FallDetector().feed(sit))
     }
 
     @Test
@@ -248,10 +298,42 @@ private fun sitting() = pose(
 )
 
 private fun squatting() = pose(
-    ls = floatArrayOf(0.36f, 0.50f),
-    rs = floatArrayOf(0.52f, 0.48f),
-    lh = floatArrayOf(0.48f, 0.68f),
-    rh = floatArrayOf(0.64f, 0.70f),
+    ls = floatArrayOf(0.42f, 0.36f),
+    rs = floatArrayOf(0.58f, 0.36f),
+    lh = floatArrayOf(0.44f, 0.60f),
+    rh = floatArrayOf(0.56f, 0.60f),
+)
+
+/** Steep torso, much shorter than standing: the body points along the camera axis. */
+private fun foreshortened() = pose(
+    ls = floatArrayOf(0.48f, 0.58f),
+    rs = floatArrayOf(0.52f, 0.59f),
+    lh = floatArrayOf(0.49f, 0.66f),
+    rh = floatArrayOf(0.53f, 0.67f),
+)
+
+/** Same torso as [stand], with a nose and two ankles so body height is defined. */
+private fun body(torso: Array<FloatArray>, noseY: Float = 0.08f, ankleY: Float = 0.78f): Array<FloatArray> {
+    val copy = torso.map { it.copyOf() }.toTypedArray()
+    copy[PoseJoints.NOSE] = floatArrayOf(0.50f, noseY, 1f)
+    copy[PoseJoints.LEFT_ANKLE] = floatArrayOf(0.46f, ankleY, 1f)
+    copy[PoseJoints.RIGHT_ANKLE] = floatArrayOf(0.54f, ankleY, 1f)
+    return copy
+}
+
+/** Torso stays long and steep, but the head and feet are close in the image. */
+private fun shortBody() = pose(
+    ls = floatArrayOf(0.46f, 0.55f),
+    rs = floatArrayOf(0.54f, 0.55f),
+    lh = floatArrayOf(0.47f, 0.78f),
+    rh = floatArrayOf(0.53f, 0.78f),
+)
+
+private fun seatedBody() = pose(
+    ls = floatArrayOf(0.42f, 0.36f),
+    rs = floatArrayOf(0.58f, 0.36f),
+    lh = floatArrayOf(0.44f, 0.64f),
+    rh = floatArrayOf(0.56f, 0.64f),
 )
 
 private fun withVisibility(pose: Array<FloatArray>, vararg hidden: Int, visibility: Float): Array<FloatArray> {
