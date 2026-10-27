@@ -76,6 +76,10 @@ MANIFEST_FIELDS = [
     "onset_ms",
     "fall_class_id",
     "notes",
+    "dataset",
+    "view",
+    "camera",
+    "direction",
 ]
 
 
@@ -381,6 +385,10 @@ def process_video(video: Path, data_root: Path, out_dir: Path, landmarker, force
         "onset_ms": onset_ms,
         "fall_class_id": str(fall_id),
         "notes": "; ".join(notes),
+        "dataset": "caucafall",
+        "view": "upper_corner",
+        "camera": "hikvision_corner",
+        "direction": activity_type,
     }
 
 

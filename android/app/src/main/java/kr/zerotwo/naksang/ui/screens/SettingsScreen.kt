@@ -201,7 +201,8 @@ private fun parse(
     if (stillMove !in 0.005f..0.3f) return null
     if (frames !in 2..10) return null
     val release = (lie + 17f).coerceAtMost(80f)
-    val upright = max(58f, lie + 20f).coerceAtMost(89f)
+    // 45° lie keeps the upright gate at 58°, the same gate the shipped 28° setting used.
+    val upright = max(58f, lie + 13f).coerceAtMost(80f)
     return base.copy(
         dropWindowMs = dropWindow,
         minDrop = minDrop,

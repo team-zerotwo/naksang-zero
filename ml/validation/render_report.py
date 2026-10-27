@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Turn FallDetector replay CSVs into ml/validation/RESULTS.md.
+"""Older CAUCAFall-only writer.
 
-The detection bits come from the Kotlin replay. This script only formats them
-and, when the videos are still on disk, saves a few tiny example frames.
+`render_results.py` is what writes `RESULTS.md` for the three-dataset replay.
+This script still formats a single CAUCAFall replay and can save example frames.
 """
 
 from __future__ import annotations
