@@ -3,7 +3,18 @@ name: Android debug APK
 on:
   push:
     branches: [main]
+    paths:
+      - "android/**"
+      - ".github/workflows/android-debug.yml"
   pull_request:
+    paths:
+      - "android/**"
+      - ".github/workflows/android-debug.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   debug-apk:
