@@ -69,6 +69,9 @@ fun SettingsScreen(
     var angle by rememberSaveable { mutableStateOf(config.maxLieAngleDeg.toString()) }
     var still by rememberSaveable { mutableStateOf(config.stillDurationMs.toString()) }
     var move by rememberSaveable { mutableStateOf(config.stillMovement.toString()) }
+    var modelOn by rememberSaveable { mutableStateOf(config.modelEnabled) }
+    var lyingOn by rememberSaveable { mutableStateOf(config.lyingStillEnabled) }
+    var lyingMs by rememberSaveable { mutableStateOf(config.lyingStillMs.toString()) }
     var error by rememberSaveable { mutableStateOf<String?>(null) }
 
     Column(
@@ -135,12 +138,27 @@ fun SettingsScreen(
         SettingField("움직임 허용 (0~1)", move, { move = it }, KeyboardType.Decimal)
         SettingField("초당 분석 횟수", fpsText, { fpsText = it }, KeyboardType.Number)
 
+        Text("보조 감지", color = NaksangColors.Sub, fontFamily = Pretendard, fontWeight = FontWeight.Bold, fontSize = 15.sp, modifier = Modifier.padding(top = 18.dp, bottom = 4.dp))
+        SettingSwitch(
+            title = "포즈 모델",
+            detail = "넘어지는 동작을 작은 모델이 같이 봐요. 일상 동작에는 잘 반응하지 않게 맞춰 두었어요.",
+            checked = modelOn,
+            onChecked = { modelOn = it },
+        )
+        SettingSwitch(
+            title = "바닥에 가만히 누움",
+            detail = "넘어지는 순간을 놓쳐도, 바닥에 가만히 있으면 알려요. 침대에 천천히 누우면 더 오래 기다려요.",
+            checked = lyingOn,
+            onChecked = { lyingOn = it },
+        )
+        SettingField("바닥에 가만히 있는 시간 (ms)", lyingMs, { lyingMs = it }, KeyboardType.Number)
+
         if (error != null) {
             Text(error!!, color = NaksangColors.Warn, fontFamily = Pretendard, fontWeight = FontWeight.Bold, fontSize = 15.sp, modifier = Modifier.padding(top = 8.dp))
         }
         Spacer(Modifier.height(16.dp))
         NaksangButton("저장") {
-            val parsed = parse(dropMs, drop, angle, still, move, fpsText, config)
+            val parsed = parse(dropMs, drop, angle, still, move, fpsText, lyingMs, modelOn, lyingOn, config)
             if (parsed == null) {
                 error = "숫자를 다시 확인해 주세요."
             } else {
@@ -186,6 +204,9 @@ private fun parse(
     still: String,
     move: String,
     fps: String,
+    lyingMs: String,
+    modelOn: Boolean,
+    lyingOn: Boolean,
     base: FallConfig,
 ): Pair<FallConfig, Int>? {
     val dropWindow = dropMs.toLongOrNull() ?: return null
@@ -194,12 +215,14 @@ private fun parse(
     val stillMs = still.toLongOrNull() ?: return null
     val stillMove = move.toFloatOrNull() ?: return null
     val frames = fps.toIntOrNull() ?: return null
+    val lying = lyingMs.toLongOrNull() ?: return null
     if (dropWindow !in 200..5_000) return null
     if (minDrop !in 0.05f..0.8f) return null
     if (lie !in 8f..70f) return null
     if (stillMs !in 400..10_000) return null
     if (stillMove !in 0.005f..0.3f) return null
     if (frames !in 2..10) return null
+    if (lying !in 4_000L..60_000L) return null
     val release = (lie + 17f).coerceAtMost(80f)
     // 45° lie keeps the upright gate at 58°, the same gate the shipped 28° setting used.
     val upright = max(58f, lie + 13f).coerceAtMost(80f)
@@ -211,6 +234,9 @@ private fun parse(
         uprightAngleDeg = upright,
         stillDurationMs = stillMs,
         stillMovement = stillMove,
+        modelEnabled = modelOn,
+        lyingStillEnabled = lyingOn,
+        lyingStillMs = lying,
     ) to frames
 }
 
@@ -232,6 +258,30 @@ private fun SettingField(label: String, value: String, onChange: (String) -> Uni
                 .border(width = 1.5.dp, color = NaksangColors.Border, shape = RoundedCornerShape(0.dp))
                 .padding(horizontal = 0.dp, vertical = 12.dp),
             decorationBox = { inner -> Box { inner() } },
+        )
+    }
+}
+
+@Composable
+private fun SettingSwitch(title: String, detail: String, checked: Boolean, onChecked: (Boolean) -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        Column(Modifier.weight(1f).padding(end = 12.dp)) {
+            Text(title, fontFamily = Pretendard, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+            Text(detail, color = NaksangColors.Sub, fontSize = 15.sp, fontFamily = Pretendard)
+        }
+        Switch(
+            checked = checked,
+            onCheckedChange = onChecked,
+            colors = SwitchDefaults.colors(
+                checkedTrackColor = NaksangColors.Btn,
+                checkedThumbColor = NaksangColors.Surface,
+                uncheckedTrackColor = NaksangColors.Border,
+                uncheckedThumbColor = NaksangColors.Surface,
+            ),
         )
     }
 }

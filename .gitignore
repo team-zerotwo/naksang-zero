@@ -16,3 +16,4 @@ ml/validation/out/
 ml/validation/.venv/
 ml/validation/models/
 ml/validation/**/__pycache__/
+ml/train/**/__pycache__/

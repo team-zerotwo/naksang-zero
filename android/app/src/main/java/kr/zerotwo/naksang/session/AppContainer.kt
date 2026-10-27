@@ -38,6 +38,8 @@ import kr.zerotwo.naksang.data.PendingFall
 import kr.zerotwo.naksang.data.SessionStore
 import kr.zerotwo.naksang.detect.FallConfig
 import kr.zerotwo.naksang.detect.FallDetector
+import kr.zerotwo.naksang.detect.LyingStillDetector
+import kr.zerotwo.naksang.detect.PoseFallScorer
 import kr.zerotwo.naksang.detect.toJointPoints
 import kr.zerotwo.naksang.detect.torsoCenter
 import kr.zerotwo.naksang.service.FallDetectionService
@@ -53,6 +55,8 @@ class AppContainer(private val app: Context) {
 
     private val repo = NaksangRepository(ApiFactory.create { serverBase })
     private val detector = FallDetector()
+    private val poseScorer = PoseFallScorer()
+    private val lyingStill = LyingStillDetector()
     private val camera = FallCameraEngine(app)
     private val poseReader = PoseReader(app)
 
@@ -90,6 +94,8 @@ class AppContainer(private val app: Context) {
             val loaded = store.load()
             serverBase = loaded.serverUrl
             detector.updateConfig(loaded.fallConfig)
+            poseScorer.update(loaded.fallConfig.modelEnabled)
+            lyingStill.updateConfig(loaded.fallConfig)
             val route = routeFor(loaded.phase)
             _state.value = loaded.copy(ready = true, route = route, serverUrl = loaded.serverUrl)
             refreshBattery()
@@ -196,7 +202,7 @@ class AppContainer(private val app: Context) {
             return
         }
         val since = _state.value.watchingSince ?: System.currentTimeMillis()
-        detector.reset()
+        resetDetectors()
         _state.update {
             it.copy(
                 phase = Phase.WATCHING,
@@ -225,7 +231,7 @@ class AppContainer(private val app: Context) {
             )
         }
         persist()
-        detector.reset()
+        resetDetectors()
         stopService()
     }
 
@@ -257,6 +263,8 @@ class AppContainer(private val app: Context) {
         val url = ServerUrl.normalize(serverRaw) ?: return "서버 주소 형식을 확인해 주세요."
         serverBase = url
         detector.updateConfig(config)
+        poseScorer.update(config.modelEnabled)
+        lyingStill.updateConfig(config)
         val lensChanged = front != _state.value.cameraFacingFront
         _state.update {
             it.copy(
@@ -276,7 +284,7 @@ class AppContainer(private val app: Context) {
     fun clearConnection() {
         countdownJob?.cancel()
         stopService()
-        detector.reset()
+        resetDetectors()
         val keep = _state.value
         _state.value = AppState(
             ready = true,
@@ -310,7 +318,7 @@ class AppContainer(private val app: Context) {
         countdownJob?.cancel()
         val iso = _state.value.detectedAtIso ?: IsoTime.now()
         val test = _state.value.testFall
-        detector.reset()
+        resetDetectors()
         _state.update {
             it.copy(
                 phase = Phase.WATCHING,
@@ -328,7 +336,7 @@ class AppContainer(private val app: Context) {
     }
 
     fun backToWatching() {
-        detector.reset()
+        resetDetectors()
         _state.update {
             it.copy(
                 phase = Phase.WATCHING,
@@ -394,9 +402,19 @@ class AppContainer(private val app: Context) {
         } else if (current.personVisible || current.poseLandmarks.isNotEmpty()) {
             _state.update { it.copy(personVisible = false, poseLandmarks = emptyList()) }
         }
-        if (current.phase == Phase.WATCHING && joints != null) {
-            if (detector.onJointArray(timestampMs, joints)) beginCountdown(isTest = false)
+        if (current.phase == Phase.WATCHING) {
+            val rule = joints != null && detector.onJointArray(timestampMs, joints)
+            val model = poseScorer.onFrame(timestampMs, joints)
+            val lying = lyingStill.onJointArray(timestampMs, joints)
+            // Rule, pose model, or lying-still. The countdown and the API body stay the same.
+            if (rule || model || lying) beginCountdown(isTest = false)
         }
+    }
+
+    private fun resetDetectors() {
+        detector.reset()
+        poseScorer.reset()
+        lyingStill.reset()
     }
 
     private fun beginCountdown(isTest: Boolean) {

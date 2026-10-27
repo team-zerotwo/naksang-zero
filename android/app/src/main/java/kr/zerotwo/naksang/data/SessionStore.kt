@@ -80,6 +80,9 @@ class SessionStore(private val context: Context) {
             prefs[Keys.upright] = state.fallConfig.uprightAngleDeg
             prefs[Keys.stillMs] = state.fallConfig.stillDurationMs
             prefs[Keys.stillMove] = state.fallConfig.stillMovement
+            prefs[Keys.modelEnabled] = state.fallConfig.modelEnabled
+            prefs[Keys.lyingEnabled] = state.fallConfig.lyingStillEnabled
+            prefs[Keys.lyingMs] = state.fallConfig.lyingStillMs
             prefs[Keys.heartbeatAt] = state.lastHeartbeatAt ?: 0L
             prefs[Keys.watchingSince] = state.watchingSince ?: 0L
             prefs[Keys.countdownEnds] = state.countdownEndsAt ?: 0L
@@ -121,7 +124,19 @@ class SessionStore(private val context: Context) {
             near(upright, 58f) &&
             stillMs == 2_000L &&
             near(stillMove, 0.035f)
-        if (previousShipped || prefs[Keys.dropWindow] == null) return defaults
+        // v6 keys are missing on a phone that saved settings before this build.
+        // Missing means the new defaults (model on, lying-still on, 9 seconds),
+        // the same way a missing rule tuple picks up [FallConfig].
+        val modelEnabled = prefs[Keys.modelEnabled] ?: defaults.modelEnabled
+        val lyingEnabled = prefs[Keys.lyingEnabled] ?: defaults.lyingStillEnabled
+        val lyingMs = prefs[Keys.lyingMs] ?: defaults.lyingStillMs
+        if (previousShipped || prefs[Keys.dropWindow] == null) {
+            return defaults.copy(
+                modelEnabled = modelEnabled,
+                lyingStillEnabled = lyingEnabled,
+                lyingStillMs = lyingMs,
+            )
+        }
         return defaults.copy(
             dropWindowMs = dropWindow,
             minDrop = minDrop,
@@ -130,6 +145,9 @@ class SessionStore(private val context: Context) {
             uprightAngleDeg = upright,
             stillDurationMs = stillMs,
             stillMovement = stillMove,
+            modelEnabled = modelEnabled,
+            lyingStillEnabled = lyingEnabled,
+            lyingStillMs = lyingMs,
         )
     }
 
@@ -158,6 +176,9 @@ class SessionStore(private val context: Context) {
         val upright = floatPreferencesKey("upright")
         val stillMs = longPreferencesKey("still_ms")
         val stillMove = floatPreferencesKey("still_move")
+        val modelEnabled = booleanPreferencesKey("model_enabled")
+        val lyingEnabled = booleanPreferencesKey("lying_still_enabled")
+        val lyingMs = longPreferencesKey("lying_still_ms")
         val heartbeatOk = booleanPreferencesKey("heartbeat_ok")
         val heartbeatAt = longPreferencesKey("heartbeat_at")
         val watchingSince = longPreferencesKey("watching_since")

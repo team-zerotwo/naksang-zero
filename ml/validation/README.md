@@ -2,7 +2,7 @@
 
 This folder asks one question: if we run the shipped Kotlin rule in `FallDetector` on public fall videos, when does it fire?
 
-It does not train a model. The yes/no decision is the real `FallDetector`. Pose landmarks are estimated offline with the same lite model, IMAGE mode, `num_poses=1`, and 0.35 confidence as `PoseReader`. The 30-second countdown in `docs/api.md` is unchanged.
+The yes/no decision for the rule columns is the real `FallDetector`. Pose landmarks are estimated offline with the same lite model, IMAGE mode, `num_poses=1`, and 0.35 confidence as `PoseReader`. The 30-second countdown in `docs/api.md` is unchanged. The pose-window model trained beside that rule lives in `ml/train/`.
 
 Every fall in these sets is acted. Counts in `RESULTS.md` are not on-phone accuracy.
 
