@@ -57,9 +57,14 @@ class LyingStillDetector(config: FallConfig = FallConfig()) {
     var maxStillLyingMs: Long = 0
         private set
 
+    private var lyingDebugState = LyingPathDebug(thresholdMs = config.lyingStillMs)
+
     fun updateConfig(newConfig: FallConfig) {
         config = newConfig
     }
+
+    /** Latest lying-still numbers. Does not change detection. */
+    fun lyingDebug(): LyingPathDebug = lyingDebugState
 
     fun reset() {
         for (index in trackedAt.indices) trackedAt[index] = Long.MIN_VALUE
@@ -76,6 +81,7 @@ class LyingStillDetector(config: FallConfig = FallConfig()) {
         sawLying = false
         sawFastDescent = false
         maxStillLyingMs = 0
+        lyingDebugState = LyingPathDebug(thresholdMs = config.lyingStillMs)
     }
 
     fun onJointArray(timestampMs: Long, joints: Array<FloatArray>?): Boolean {
@@ -85,7 +91,9 @@ class LyingStillDetector(config: FallConfig = FallConfig()) {
 
     fun onLandmarks(timestampMs: Long, landmarks: List<JointPoint>?): Boolean {
         val cfg = config
-        if (!cfg.lyingStillEnabled) return false
+        if (!cfg.lyingStillEnabled) {
+            return publish(fired = false, counting = false, elapsedMs = 0, thresholdMs = cfg.lyingStillMs, fast = false)
+        }
         val pose = if (landmarks == null) null else measure(timestampMs, landmarks, cfg)
         if (pose == null) {
             lyingNow = false
@@ -94,7 +102,7 @@ class LyingStillDetector(config: FallConfig = FallConfig()) {
                 clearLyingClock()
                 if (timestampMs - previous > cfg.lyingRecentUprightMs) forgetUpright()
             }
-            return false
+            return publish(fired = false, counting = false, elapsedMs = 0, thresholdMs = cfg.lyingStillMs, fast = false)
         }
         lastGoodAt = timestampMs
         val angle = pose.angleDeg
@@ -107,11 +115,11 @@ class LyingStillDetector(config: FallConfig = FallConfig()) {
             armed = true
             lyingNow = false
             witnessedFastNow = false
-            return false
+            return publish(fired = false, counting = false, elapsedMs = 0, thresholdMs = cfg.lyingStillMs, fast = false)
         }
         if (!armed) {
             lyingNow = false
-            return false
+            return publish(fired = false, counting = false, elapsedMs = 0, thresholdMs = cfg.lyingStillMs, fast = false)
         }
 
         val low = cy >= cfg.lyingMinCenterY
@@ -121,7 +129,7 @@ class LyingStillDetector(config: FallConfig = FallConfig()) {
             clearLyingClock()
             lyingNow = false
             witnessedFastNow = false
-            return false
+            return publish(fired = false, counting = false, elapsedMs = 0, thresholdMs = cfg.lyingStillMs, fast = false)
         }
 
         lyingNow = true
@@ -137,7 +145,8 @@ class LyingStillDetector(config: FallConfig = FallConfig()) {
             lyingSince = timestampMs
             anchorX = pose.cx
             anchorY = pose.cy
-            return false
+            val need = if (witnessedFast) cfg.lyingStillMs else cfg.lyingStillUnwitnessedMs
+            return publish(fired = false, counting = true, elapsedMs = 0, thresholdMs = need, fast = witnessedFast)
         }
         witnessedFastNow = witnessedFast
 
@@ -147,20 +156,43 @@ class LyingStillDetector(config: FallConfig = FallConfig()) {
             lyingSince = timestampMs
             anchorX = pose.cx
             anchorY = pose.cy
-            return false
+            val need = if (witnessedFast) cfg.lyingStillMs else cfg.lyingStillUnwitnessedMs
+            return publish(fired = false, counting = true, elapsedMs = 0, thresholdMs = need, fast = witnessedFast)
         }
 
-        val since = lyingSince ?: return false
+        val since = lyingSince
+        if (since == null) {
+            return publish(fired = false, counting = false, elapsedMs = 0, thresholdMs = cfg.lyingStillMs, fast = false)
+        }
         noteHold(timestampMs)
-        val need = if (witnessedFast) cfg.lyingStillMs else cfg.lyingStillUnwitnessedMs
-        if (timestampMs - since >= need) {
+        val fast = witnessedFast
+        val need = if (fast) cfg.lyingStillMs else cfg.lyingStillUnwitnessedMs
+        val elapsed = timestampMs - since
+        if (elapsed >= need) {
             armed = false
             clearLyingClock()
             lyingNow = false
             witnessedFastNow = false
-            return true
+            return publish(fired = true, counting = false, elapsedMs = elapsed, thresholdMs = need, fast = fast)
         }
-        return false
+        return publish(fired = false, counting = true, elapsedMs = elapsed, thresholdMs = need, fast = fast)
+    }
+
+    private fun publish(
+        fired: Boolean,
+        counting: Boolean,
+        elapsedMs: Long,
+        thresholdMs: Long,
+        fast: Boolean,
+    ): Boolean {
+        lyingDebugState = LyingPathDebug(
+            counting = counting,
+            elapsedMs = elapsedMs,
+            thresholdMs = thresholdMs,
+            witnessedFast = fast,
+            fired = fired,
+        )
+        return fired
     }
 
     private fun noteUpright(t: Long, cy: Float) {

@@ -30,6 +30,7 @@ import kr.zerotwo.naksang.ui.screens.CameraPlaceScreen
 import kr.zerotwo.naksang.ui.screens.ConnectMode
 import kr.zerotwo.naksang.ui.screens.ConnectScreen
 import kr.zerotwo.naksang.ui.screens.CountdownScreen
+import kr.zerotwo.naksang.ui.screens.ModelTestScreen
 import kr.zerotwo.naksang.ui.screens.SentScreen
 import kr.zerotwo.naksang.ui.screens.SettingsScreen
 import kr.zerotwo.naksang.ui.screens.StandbyScreen
@@ -50,7 +51,8 @@ fun NaksangRoot(container: AppContainer) {
     SideEffect {
         val window = (view.context as Activity).window
         val controller = WindowCompat.getInsetsController(window, view)
-        controller.isAppearanceLightStatusBars = route != Route.Camera
+        val onDarkPreview = route == Route.Camera || route == Route.ModelTest
+        controller.isAppearanceLightStatusBars = !onDarkPreview
         controller.isAppearanceLightNavigationBars = route != Route.Camera
         @Suppress("DEPRECATION")
         window.navigationBarColor = when (route) {
@@ -61,6 +63,7 @@ fun NaksangRoot(container: AppContainer) {
     }
 
     BackHandler(enabled = route == Route.Settings) { container.closeSettings() }
+    BackHandler(enabled = route == Route.ModelTest) { container.closeModelTest() }
     BackHandler(enabled = route == Route.EditAddress) { container.closeEditor() }
     BackHandler(enabled = route == Route.Camera) { container.backFromCamera() }
     BackHandler(enabled = route == Route.Countdown) { }
@@ -76,7 +79,9 @@ fun NaksangRoot(container: AppContainer) {
     }
     val cameraPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (!granted) return@rememberLauncherForActivityResult
-        if (afterCameraGrant == "watch") watchAfterCamera() else container.openCamera()
+        if (afterCameraGrant == "watch") watchAfterCamera()
+        else if (afterCameraGrant == "model-test") container.openModelTest()
+        else container.openCamera()
     }
     fun goToCamera(next: String) {
         afterCameraGrant = next
@@ -85,6 +90,8 @@ fun NaksangRoot(container: AppContainer) {
             cameraPermission.launch(Manifest.permission.CAMERA)
         } else if (next == "watch") {
             watchAfterCamera()
+        } else if (next == "model-test") {
+            container.openModelTest()
         } else {
             container.openCamera()
         }
@@ -175,7 +182,26 @@ fun NaksangRoot(container: AppContainer) {
             onClear = container::clearConnection,
             onStop = container::stopWatching,
             onBack = container::closeSettings,
+            onOpenModelTest = { goToCamera("model-test") },
         )
+        Route.ModelTest -> {
+            val test by container.modelTest.collectAsState()
+            ModelTestScreen(
+                ui = test,
+                mirrorX = state.cameraFacingFront,
+                minVisibility = state.fallConfig.minVisibility,
+                demoOffline = state.demoOffline,
+                analysisFps = state.analysisFps,
+                cameraError = state.cameraError,
+                onPreviewReady = { surface, port -> container.attachPreview(surface, port) },
+                onPreviewGone = { container.attachPreview(null) },
+                onBack = container::closeModelTest,
+                onClearLog = container::clearModelTestLog,
+                onExportLog = { container.shareModelTestLog(context) },
+                onPickVideo = container::replayModelTestVideo,
+                onStopReplay = container::stopModelReplay,
+            )
+        }
     }
 }
 

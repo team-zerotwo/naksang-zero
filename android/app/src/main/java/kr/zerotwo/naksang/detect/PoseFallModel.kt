@@ -70,6 +70,8 @@ class PoseFallScorer(
     private val frames = ArrayDeque<Array<FloatArray>?>()
     private val times = ArrayDeque<Long>()
     private var streak = 0
+    private var lastScore = 0.0
+    private var lastFired = false
 
     fun update(enabled: Boolean, threshold: Double = this.threshold, holdFrames: Int = this.holdFrames) {
         this.enabled = enabled
@@ -81,7 +83,19 @@ class PoseFallScorer(
         frames.clear()
         times.clear()
         streak = 0
+        lastScore = 0.0
+        lastFired = false
     }
+
+    /** Latest score. Does not change detection. */
+    fun modelDebug(): ModelPathDebug = ModelPathDebug(
+        enabled = enabled,
+        score = lastScore,
+        threshold = threshold,
+        streak = streak,
+        holdFrames = holdFrames,
+        fired = lastFired,
+    )
 
     /** @param joints null when this analysis frame has no pose. */
     fun onFrame(timestampMs: Long, joints: Array<FloatArray>?): Boolean {
@@ -91,22 +105,23 @@ class PoseFallScorer(
             frames.removeFirst()
             times.removeFirst()
         }
-        if (!enabled) {
-            streak = 0
-            return false
-        }
         val timesMs = LongArray(times.size) { times[it] }
-        val vector = PoseFeatures.features(frames.toList(), timesMs) ?: run {
+        val vector = PoseFeatures.features(frames.toList(), timesMs)
+        val probability = if (vector == null) null else PoseFallModel.probability(vector)
+        lastScore = probability ?: 0.0
+        if (!enabled || probability == null) {
             streak = 0
+            lastFired = false
             return false
         }
-        val probability = PoseFallModel.probability(vector)
         if (probability >= threshold) {
             streak += 1
-            if (streak == holdFrames) return true
-        } else {
-            streak = 0
+            val fired = streak == holdFrames
+            lastFired = fired
+            return fired
         }
+        streak = 0
+        lastFired = false
         return false
     }
 }
