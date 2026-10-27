@@ -1,6 +1,6 @@
 # Fall-rule replay on three public datasets
 
-The yes/no decision is the Kotlin `FallDetector` in the app, fed landmark CSVs. Pose landmarks were estimated offline with the same lite model, IMAGE mode, `num_poses=1`, and 0.35 confidence as `PoseReader`. Nothing here trains a model, and frames are not uploaded. The 30-second countdown in `docs/api.md` is unchanged.
+The yes/no decision for the rule tables is the Kotlin `FallDetector` in the app, fed landmark CSVs. Pose landmarks were estimated offline with the same lite model, IMAGE mode, `num_poses=1`, and 0.35 confidence as `PoseReader`. The pose-window model is a separate section below. Frames are not uploaded. The 30-second countdown in `docs/api.md` is unchanged.
 
 Every fall in these sets is acted. Young adults were asked to fall, often with a planned direction. An unwitnessed fall can look different. Counts below are not on-phone accuracy.
 
@@ -126,3 +126,59 @@ UR Fall stays at 0/60. Many of those clips end within a second of the on-ground 
 A detection waits 2000 ms after the down pose. Clips that end sooner cannot confirm. GMDCSA delays are longer when the Falling label starts at the loss of balance, because the clock includes the descent plus the hold. CAUCAFall and UR delays start at the on-ground label, so a median near 2000 ms means the hold itself.
 
 Not checked here: a physical phone, heat at 640×480, or whether a resident who stays on the floor matches these acted landings. Push-ups, sleeping, and lying down as a daily activity are in GMDCSA or UR and are counted as false alarms when the rule fires. They are not falls, and a false alarm was not accepted in exchange for more detections.
+
+## Pose model and lying-still (v6)
+
+The phone now alerts when the shipped rule fires, or a logistic regression on a 10-frame pose window stays above 0.99 for two frames, or the person is lying on the floor and almost still. The countdown is still 30 seconds. Settings can turn the model and the lying-still path off. The model weights are `PoseFallWeights`. Retrain with `ml/train/train_pose_model.py`.
+
+The window is hip-centered and divided by torso length. Left and right are folded together, so a mirrored front camera does not change the vector. A raw move down the image is not a feature. Walking toward the upper-corner camera does that without falling, and it used to score above real falls. A drop counts only when the torso also flattens or shortens. Ceiling clips are scored and are not training rows, because image y is not gravity there.
+
+The shipped threshold is the highest one with zero ADL false alarms on the clips the model was trained on, after taking the most falls. That operating point is in-distribution. Leave-one-dataset-out, below, picks a fresh threshold on the held-out set with the same zero-false-alarm rule. Those two tables are not the same number.
+
+Lying still uses the shipped lie angle (45°) plus a low center or a drop from a recent upright pose. A fast descent (torso was at least 72° and reached lying within 1200 ms, after an upright or sitting pose in the last 20 s) must then hold within 0.05 of the frame for 9 seconds. A slow lie-down, or a person who was already lying when first seen, waits 45 seconds. Getting up rearms the detector. Shifting past the stillness gate restarts the clock and keeps the fast or slow choice. The 9 second path can still treat a fast flop onto a bed as a fall if the person then lies still. The 45 second path is the conservative one for a deliberate lie-down. Both durations are the defaults; the short one is a setting.
+
+### Rules, model, and lying-still on the same clips
+
+Before is the PR #7 rule. After is rule or model or lying-still, using the shipped weights and the 0.99 threshold. The model was fit on these three datasets, so the model column is in-distribution. Lying-still finishes inside none of the files. Delay is milliseconds from the dataset fall marker. A negative delay means the score fired during the descent, before the on-ground label.
+
+| Dataset | View | Falls before | Falls after | ADL false alarms before | ADL false alarms after | Median delay before (ms) | Median delay after (ms) |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| CAUCAFall | all views | 36.0% (18/50) | 38.0% (19/50) | 0.0% (0/50) | 0.0% (0/50) | 2800 | 2750 |
+| GMDCSA-24 | all views | 34.2% (27/79) | 54.4% (43/79) | 0.0% (0/81) | 0.0% (0/81) | 3500 | 1200 |
+| GMDCSA-24 | height_135cm | 40.0% (18/45) | 60.0% (27/45) | 0.0% (0/45) | 0.0% (0/45) | 3600 | 1200 |
+| GMDCSA-24 | height_64cm | 23.5% (4/17) | 29.4% (5/17) | 0.0% (0/20) | 0.0% (0/20) | 3200 | 800 |
+| GMDCSA-24 | height_70-90cm | 21.4% (3/14) | 64.3% (9/14) | 0.0% (0/9) | 0.0% (0/9) | 3500 | 1200 |
+| GMDCSA-24 | side | 66.7% (2/3) | 66.7% (2/3) | 0.0% (0/3) | 0.0% (0/3) | 3950 | 2550 |
+| UR Fall | all views | 0.0% (0/60) | 13.3% (8/60) | 0.0% (0/40) | 0.0% (0/40) | — | 584 |
+| UR Fall | side | 0.0% (0/30) | 23.3% (7/30) | 0.0% (0/40) | 0.0% (0/40) | — | 600 |
+| UR Fall | ceiling | 0.0% (0/30) | 3.3% (1/30) | — | — | — | -1300 |
+
+Across the three sets that is 45/189 falls before and 70/189 after, with 0 ADL false alarms both times. The model alone, at the same threshold, is 1/50, 37/79, and 8/60. On GMDCSA it adds 16 falls the rule misses and overlaps 21. On CAUCAFall it adds the one fall the rule misses. On UR Fall the rule still catches nothing, and all 8 are the model. The per-clip file is `per_video_signals.csv` from the Kotlin replay. UR rows stay out of git.
+
+### Leave-one-dataset-out (model only)
+
+Train on two datasets, test on the third, and choose the threshold so the held-out ADL false alarms are 0. This is the generalization number. It is not combined with the rule, and it is not the threshold shipped on the phone. The phone uses one model trained on all three sets and the single threshold 0.99.
+
+| Held-out dataset | Threshold | Falls | ADL false alarms | Median delay (ms) |
+| --- | --- | --- | --- | --- |
+| CAUCAFall | 0.97 | 10.0% (5/50) | 0.0% (0/50) | 250 |
+| GMDCSA-24 | 0.999 | 45.6% (36/79) | 0.0% (0/81) | 1400 |
+| UR Fall | 0.98 | 16.7% (10/60) | 0.0% (0/40) | 584 |
+
+A 12-unit MLP was trained the same way and kept fewer held-out falls (45/189 against 51/189), so it was not shipped. Full rows are in `results/model_lodo.md`.
+
+### In-distribution model (labeled separately)
+
+A model trained and scored on the same dataset, with its own zero-false-alarm threshold, is optimistic. CAUCAFall's own threshold has to sit at 0.9999 and then catches 0/50. GMDCSA catches 38/79 at 0.99. UR Fall catches 21/60 at 0.94, median delay 67 ms. The shared model at 0.99 is the phone: 1/50, 37/79, 8/60, all with 0 ADL false alarms. CAUCAFall walking and hopping still score close to falls, which is why that set barely moves.
+
+### Lying still inside these files
+
+The timer does not finish in any fall or ADL clip. The files end first. Of the falls the combined detector misses, 16 CAUCAFall, 25 GMDCSA, and 19 UR clips had already entered the fast floor-lying pose. The longest still stretch in those missed clips is 6000 ms, 5000 ms, and 1400 ms. None reach the 9 second default, so a longer default was not shortened to harvest extra dataset hits.
+
+ADL clips do enter a flat pose. The longest still-lying stretch is 1600 ms on CAUCAFall (a pick-up), 5200 ms on GMDCSA (lying down; three lying-down clips hold at least 4000 ms), and 1000 ms on UR Fall. Kneeling, sitting, hopping, and exercise stay under 2400 ms. None reach 9 seconds, which is why the ADL false-alarm count above is 0. A person who flops onto a bed and stays still for 9 seconds can still alert. A slow lie-down waits 45 seconds. Someone already lying when the camera starts also waits 45 seconds.
+
+### Limits of this section
+
+Every fall is acted. Nothing here was run on the spare phone. Landmarks come from the Python MediaPipe runtime, not from Android `PoseReader`. The combined table trains on the clips it scores. The leave-one-dataset-out table is the one that does not. UR ceiling is 1/30, and there is no ceiling ADL set. Eight CAUCAFall hop-frame label files failed to download; hop is a daily activity, and fall onsets do not use those files.
+
+UR Fall is CC BY-NC-SA 4.0. The videos and landmark CSVs are not in the repo. The shipped weights were fit with the UR side-view sequences included, so the weight file is a derivative of that set as well as of the two CC BY sets. A model fit without UR caught fewer UR falls when those clips were held out. That choice is recorded here so it can be reversed.

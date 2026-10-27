@@ -198,6 +198,7 @@ internal object CaucaFallReplay {
         val evalsPrevious = loaded.map { (meta, frames) -> evaluate(frames, meta, previous) }
         writePerVideo(File(outDir, "per_video.csv"), evals)
         writePerVideo(File(outDir, "per_video_previous.csv"), evalsPrevious)
+        writeSignals(File(outDir, "per_video_signals.csv"), loaded, config)
         writeSweep(File(outDir, "threshold_sweep.csv"), loaded, config, previous)
         File(outDir, "shipped_config.txt").writeText(config.toString() + "\n")
         File(outDir, "previous_config.txt").writeText(previous.toString() + "\n")
@@ -249,6 +250,119 @@ internal object CaucaFallReplay {
             maxHipDrop = stats.maxHipDrop,
             maxDrop1600 = stats.maxDrop1600,
         )
+    }
+
+    data class SignalRow(
+        val videoId: String,
+        val kind: String,
+        val activityType: String,
+        val dataset: String,
+        val view: String,
+        val onsetMs: Long?,
+        val durationMs: Long?,
+        val ruleAt: Long?,
+        val modelAt: Long?,
+        val lyingAt: Long?,
+        val combinedAt: Long?,
+        val source: String,
+        val sawLying: Boolean,
+        val sawFastDescent: Boolean,
+        val maxStillLyingMs: Long,
+    )
+
+    /**
+     * Rule, pose model, and lying-still on one clip. The earliest time wins.
+     * A tie goes to the rule, then the model.
+     */
+    fun signals(frames: List<ReplayFrame>, meta: VideoMeta, config: FallConfig = FallConfig()): SignalRow {
+        val rule = FallDetector(config)
+        val model = PoseFallScorer(enabled = config.modelEnabled)
+        val lying = LyingStillDetector(config)
+        var ruleAt: Long? = null
+        var modelAt: Long? = null
+        var lyingAt: Long? = null
+        for (frame in frames) {
+            val joints = if (frame.poseFound) frame.joints else null
+            if (ruleAt == null && joints != null && rule.onJointArray(frame.timestampMs, joints)) {
+                ruleAt = frame.timestampMs
+            }
+            if (modelAt == null && model.onFrame(frame.timestampMs, joints)) {
+                modelAt = frame.timestampMs
+            }
+            if (lyingAt == null && lying.onJointArray(frame.timestampMs, joints)) {
+                lyingAt = frame.timestampMs
+            }
+        }
+        val combined = listOfNotNull(ruleAt, modelAt, lyingAt).minOrNull()
+        val source = when {
+            combined == null -> ""
+            ruleAt != null && ruleAt == combined -> "rule"
+            modelAt != null && modelAt == combined -> "model"
+            else -> "lying"
+        }
+        return SignalRow(
+            videoId = meta.videoId,
+            kind = meta.kind,
+            activityType = meta.activityType,
+            dataset = meta.dataset,
+            view = meta.view,
+            onsetMs = meta.onsetMs,
+            durationMs = meta.durationMs,
+            ruleAt = ruleAt,
+            modelAt = modelAt,
+            lyingAt = lyingAt,
+            combinedAt = combined,
+            source = source,
+            sawLying = lying.sawLying,
+            sawFastDescent = lying.sawFastDescent,
+            maxStillLyingMs = lying.maxStillLyingMs,
+        )
+    }
+
+    private fun writeSignals(file: File, loaded: List<Pair<VideoMeta, List<ReplayFrame>>>, config: FallConfig) {
+        file.bufferedWriter().use { writer ->
+            writer.append(
+                "video_id,kind,activity_type,dataset,view,onset_ms,duration_ms," +
+                    "rule_at_ms,model_at_ms,lying_at_ms,combined_at_ms,source,saw_lying,saw_fast_descent,max_still_lying_ms,delay_ms",
+            )
+            writer.append('\n')
+            for ((meta, frames) in loaded) {
+                val row = signals(frames, meta, config)
+                val delay = if (row.combinedAt != null && row.onsetMs != null) row.combinedAt - row.onsetMs else null
+                writer.append(row.videoId)
+                writer.append(',')
+                writer.append(row.kind)
+                writer.append(',')
+                writer.append(row.activityType)
+                writer.append(',')
+                writer.append(row.dataset)
+                writer.append(',')
+                writer.append(row.view)
+                writer.append(',')
+                writer.append(row.onsetMs?.toString() ?: "")
+                writer.append(',')
+                writer.append(row.durationMs?.toString() ?: "")
+                writer.append(',')
+                writer.append(row.ruleAt?.toString() ?: "")
+                writer.append(',')
+                writer.append(row.modelAt?.toString() ?: "")
+                writer.append(',')
+                writer.append(row.lyingAt?.toString() ?: "")
+                writer.append(',')
+                writer.append(row.combinedAt?.toString() ?: "")
+                writer.append(',')
+                writer.append(row.source)
+                writer.append(',')
+                writer.append(if (row.sawLying) "1" else "0")
+                writer.append(',')
+                writer.append(if (row.sawFastDescent) "1" else "0")
+                writer.append(',')
+                writer.append(row.maxStillLyingMs.toString())
+                writer.append(',')
+                writer.append(delay?.toString() ?: "")
+                writer.append('\n')
+            }
+        }
     }
 
     fun firstFire(frames: List<ReplayFrame>, config: FallConfig): Long? {

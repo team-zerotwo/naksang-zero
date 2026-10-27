@@ -178,6 +178,8 @@ def main() -> int:
         index_path.write_text(json.dumps(entries))
         print(f"wrote {index_path} ({len(entries)} files)", flush=True)
 
+    # Videos first so pose extraction can start while the per-frame labels finish.
+    entries.sort(key=lambda entry: (0 if str(entry["filename"]).lower().endswith(".avi") else 1, entry["path"]))
     avis = [entry for entry in entries if entry["filename"].lower().endswith(".avi")]
     txts = [entry for entry in entries if entry["filename"].lower().endswith(".txt")]
     print(

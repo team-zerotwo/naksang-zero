@@ -114,6 +114,35 @@ data class FallConfig(
     val steepMinAngleDeg: Float = 65f,
     /** Movement limit while confirming a steep-torso fall. Tighter than [stillMovement]. */
     val steepStillMovement: Float = 0.035f,
+    /**
+     * Score the pose window with the shipped weights. A suspicion is the rule
+     * above, or this score held for a few frames, or [lyingStillEnabled].
+     */
+    val modelEnabled: Boolean = true,
+    /**
+     * Person lying low and almost still. Short timer after a fast descent from
+     * a recent upright pose; long timer if they were already lying or lay down slowly.
+     */
+    val lyingStillEnabled: Boolean = true,
+    /** Stillness after a witnessed fast descent onto the floor. */
+    val lyingStillMs: Long = 9_000,
+    /** Stillness when the descent was slow or the person was already lying. */
+    val lyingStillUnwitnessedMs: Long = 45_000,
+    /** An upright or sitting pose inside this window counts as "seen before lying". */
+    val lyingRecentUprightMs: Long = 20_000,
+    /**
+     * Time from a steep torso (about 72°) to lying. A fall crosses that band
+     * quickly. Lying down on a bed crosses it over a longer part of the motion.
+     */
+    val lyingMaxDescentMs: Long = 1_200,
+    /** Torso at or above this counts as clearly upright for the descent clock. */
+    val lyingHighAngleDeg: Float = 72f,
+    /** Torso center at or below this image y (0 is the top) counts as low in the frame. */
+    val lyingMinCenterY: Float = 0.45f,
+    /** Drop from the last upright center that also counts as low, even if the center is not at the bottom. */
+    val lyingMinDrop: Float = 0.08f,
+    /** At or above this torso angle the person is upright, sitting, or kneeling, not lying. */
+    val lyingUprightAngleDeg: Float = 50f,
 )
 
 /**
