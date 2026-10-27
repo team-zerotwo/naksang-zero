@@ -129,10 +129,14 @@ fun NaksangRoot(container: AppContainer) {
             mirrorX = state.cameraFacingFront,
             cameraError = state.cameraError,
             showLiveCamera = true,
-            onPreviewReady = container::attachPreview,
+            onPreviewReady = { surface, port -> container.attachPreview(surface, port) },
             onPreviewGone = { container.attachPreview(null) },
             onBack = container::backFromCamera,
             onStart = { goToCamera("watch") },
+            landmarks = state.poseLandmarks,
+            frameWidth = state.poseFrameWidth,
+            frameHeight = state.poseFrameHeight,
+            minVisibility = state.fallConfig.minVisibility,
         )
         Route.Standby -> StandbyScreen(
             batteryPercent = state.batteryPercent,

@@ -3,6 +3,7 @@ package kr.zerotwo.naksang.detect
 import kotlin.math.abs
 import kotlin.math.atan2
 import kotlin.math.hypot
+import kotlin.math.max
 
 /** MediaPipe Pose landmark indices used by the demo rule. */
 object PoseJoints {
@@ -11,6 +12,18 @@ object PoseJoints {
     const val LEFT_HIP = 23
     const val RIGHT_HIP = 24
 }
+
+/** Landmark visibility below this is ignored. One side of the torso is enough. */
+const val DEFAULT_MIN_VISIBILITY = 0.35f
+
+/** Exponential smoothing on torso joints. 1 follows the raw pose. */
+const val DEFAULT_SMOOTH_ALPHA = 0.55f
+
+/**
+ * Missed or partly hidden frames inside this window do not restart an
+ * in-progress fall. About six analysis frames at 5 fps.
+ */
+const val DEFAULT_PERSON_LOST_GRACE_MS = 1_200L
 
 /**
  * One joint in normalized image coordinates.
@@ -25,7 +38,7 @@ data class JointPoint(
 
 /**
  * Thresholds for the 11/3 rule. All distances are fractions of the frame.
- * Change them from the in-app settings while filming.
+ * Change them from the in-app settings while filming, or edit the defaults here.
  */
 data class FallConfig(
     /** How far back to look for a sudden drop. */
@@ -42,9 +55,16 @@ data class FallConfig(
     val stillDurationMs: Long = 2_000,
     /** Torso-center movement that restarts the stillness timer. */
     val stillMovement: Float = 0.035f,
-    val minVisibility: Float = 0.5f,
-    /** A gap longer than this means tracking was lost, so stillness starts over. */
-    val trackingGapResetMs: Long = 700,
+    val minVisibility: Float = DEFAULT_MIN_VISIBILITY,
+    /** 1 follows the raw joint. Lower values damp jitter that would restart stillness. */
+    val smoothAlpha: Float = DEFAULT_SMOOTH_ALPHA,
+    /**
+     * A partly hidden torso keeps its last joint positions for this long, and a
+     * hole shorter than this does not restart stillness mid-fall.
+     */
+    val personLostGraceMs: Long = DEFAULT_PERSON_LOST_GRACE_MS,
+    /** A gap longer than this (and longer than [personLostGraceMs]) restarts stillness. */
+    val trackingGapResetMs: Long = DEFAULT_PERSON_LOST_GRACE_MS,
 )
 
 /**
@@ -55,6 +75,11 @@ data class FallConfig(
  *    [FallConfig.dropWindowMs], and the body was upright at the start of that window.
  * 2. The shoulder–hip axis is near horizontal.
  * 3. The center then stays within [FallConfig.stillMovement] for [FallConfig.stillDurationMs].
+ *
+ * Each side of the torso is optional: one visible shoulder and one visible hip
+ * are enough. A joint that just dropped out is held for [FallConfig.personLostGraceMs]
+ * so the end of a fall, when the body is partly out of frame, does not wipe the
+ * sequence. Joint positions are smoothed before the three checks.
  *
  * After a suspicion the detector stays disarmed until it sees an upright pose,
  * so a person who remains on the floor is not reported on every frame.
@@ -70,7 +95,10 @@ class FallDetector(config: FallConfig = FallConfig()) {
         val angleDeg: Float,
     )
 
+    private data class TrackedJoint(val x: Float, val y: Float, val seenAt: Long)
+
     private val history = ArrayDeque<Sample>()
+    private val tracked = arrayOfNulls<TrackedJoint>(TORSO_SLOTS.size)
     private var lieSince: Long? = null
     private var anchorX = 0f
     private var anchorY = 0f
@@ -88,6 +116,7 @@ class FallDetector(config: FallConfig = FallConfig()) {
         lieSince = null
         lastTimestamp = null
         armed = true
+        for (i in tracked.indices) tracked[i] = null
     }
 
     /**
@@ -95,14 +124,7 @@ class FallDetector(config: FallConfig = FallConfig()) {
      * @return true exactly once when a fall becomes suspected.
      */
     fun onJointArray(timestampMs: Long, joints: Array<FloatArray>): Boolean {
-        val landmarks = joints.map { row ->
-            JointPoint(
-                x = row.getOrElse(0) { 0f },
-                y = row.getOrElse(1) { 0f },
-                visibility = row.getOrElse(2) { 1f },
-            )
-        }
-        return onLandmarks(timestampMs, landmarks)
+        return onLandmarks(timestampMs, joints.toJointPoints())
     }
 
     @Synchronized
@@ -127,7 +149,8 @@ class FallDetector(config: FallConfig = FallConfig()) {
         }
 
         val gap = previousTime?.let { sample.t - it }
-        if (lieSince != null && gap != null && gap > cfg.trackingGapResetMs) {
+        val gapLimit = max(cfg.personLostGraceMs, cfg.trackingGapResetMs)
+        if (lieSince != null && gap != null && gap > gapLimit) {
             lieSince = sample.t
             anchorX = sample.cx
             anchorY = sample.cy
@@ -169,51 +192,110 @@ class FallDetector(config: FallConfig = FallConfig()) {
         return false
     }
 
+    /**
+     * Smooth the torso joints that are currently visible. A joint that disappeared
+     * inside the grace window keeps its last position so a one-side occlusion does
+     * not jump the center. Returns null when this frame has no live torso joint,
+     * or when a shoulder and a hip cannot be formed even with held points.
+     */
     private fun measure(t: Long, landmarks: List<JointPoint>, cfg: FallConfig): Sample? {
-        val ls = landmarks.getOrNull(PoseJoints.LEFT_SHOULDER) ?: return null
-        val rs = landmarks.getOrNull(PoseJoints.RIGHT_SHOULDER) ?: return null
-        val lh = landmarks.getOrNull(PoseJoints.LEFT_HIP) ?: return null
-        val rh = landmarks.getOrNull(PoseJoints.RIGHT_HIP) ?: return null
-        if (ls.visibility < cfg.minVisibility ||
-            rs.visibility < cfg.minVisibility ||
-            lh.visibility < cfg.minVisibility ||
-            rh.visibility < cfg.minVisibility
-        ) {
-            return null
+        var anyLive = false
+        val live = BooleanArray(TORSO_SLOTS.size)
+        val raw = arrayOfNulls<JointPoint>(TORSO_SLOTS.size)
+        for (i in TORSO_SLOTS.indices) {
+            val joint = landmarks.getOrNull(TORSO_SLOTS[i])
+            raw[i] = joint
+            val visible = joint != null && joint.visibility >= cfg.minVisibility
+            live[i] = visible
+            if (visible) anyLive = true
         }
-        val sx = (ls.x + rs.x) / 2f
-        val sy = (ls.y + rs.y) / 2f
-        val hx = (lh.x + rh.x) / 2f
-        val hy = (lh.y + rh.y) / 2f
-        val angle = Math.toDegrees(
-            atan2(abs(sy - hy).toDouble(), abs(sx - hx).toDouble()),
-        ).toFloat()
-        return Sample(
-            t = t,
-            cx = (sx + hx) / 2f,
-            cy = (sy + hy) / 2f,
-            angleDeg = angle,
+        if (!anyLive) return null
+
+        // Placeholders stay at visibility 0 so they cannot form a fake axis.
+        val assembled = MutableList(PoseJoints.RIGHT_HIP + 1) { JointPoint(0f, 0f, 0f) }
+        for (i in TORSO_SLOTS.indices) {
+            val point = trackJoint(i, raw[i], live[i], t, cfg) ?: continue
+            assembled[TORSO_SLOTS[i]] = point
+        }
+        val axis = torsoAxis(assembled, minVisibility = 0.5f) ?: return null
+        return Sample(t = t, cx = axis.cx, cy = axis.cy, angleDeg = axis.angleDeg)
+    }
+
+    private fun trackJoint(
+        slot: Int,
+        raw: JointPoint?,
+        live: Boolean,
+        t: Long,
+        cfg: FallConfig,
+    ): JointPoint? {
+        val prev = tracked[slot]
+        if (live && raw != null) {
+            val alpha = cfg.smoothAlpha.coerceIn(0.05f, 1f)
+            val stale = prev == null || t - prev.seenAt > cfg.personLostGraceMs
+            val x = if (stale) raw.x else alpha * raw.x + (1f - alpha) * prev.x
+            val y = if (stale) raw.y else alpha * raw.y + (1f - alpha) * prev.y
+            tracked[slot] = TrackedJoint(x, y, t)
+            return JointPoint(x, y, 1f)
+        }
+        if (prev != null && t - prev.seenAt <= cfg.personLostGraceMs) {
+            return JointPoint(prev.x, prev.y, 1f)
+        }
+        return null
+    }
+
+    private companion object {
+        val TORSO_SLOTS = intArrayOf(
+            PoseJoints.LEFT_SHOULDER,
+            PoseJoints.RIGHT_SHOULDER,
+            PoseJoints.LEFT_HIP,
+            PoseJoints.RIGHT_HIP,
         )
     }
 }
 
-/** Average of the two shoulders and two hips, or null when any of them is missing. */
-fun torsoCenter(joints: Array<FloatArray>, minVisibility: Float = 0.5f): Pair<Float, Float>? {
-    val indices = intArrayOf(
-        PoseJoints.LEFT_SHOULDER,
-        PoseJoints.RIGHT_SHOULDER,
-        PoseJoints.LEFT_HIP,
-        PoseJoints.RIGHT_HIP,
+data class TorsoAxis(
+    val cx: Float,
+    val cy: Float,
+    val angleDeg: Float,
+)
+
+/**
+ * Shoulder/hip axis from whichever of the four torso joints clear [minVisibility].
+ * Needs at least one shoulder and one hip. The center is the midpoint of the
+ * visible shoulder group and the visible hip group.
+ */
+fun torsoAxis(landmarks: List<JointPoint>, minVisibility: Float = DEFAULT_MIN_VISIBILITY): TorsoAxis? {
+    val shoulders = ArrayList<JointPoint>(2)
+    val hips = ArrayList<JointPoint>(2)
+    landmarks.getOrNull(PoseJoints.LEFT_SHOULDER)?.takeIf { it.visibility >= minVisibility }?.let { shoulders += it }
+    landmarks.getOrNull(PoseJoints.RIGHT_SHOULDER)?.takeIf { it.visibility >= minVisibility }?.let { shoulders += it }
+    landmarks.getOrNull(PoseJoints.LEFT_HIP)?.takeIf { it.visibility >= minVisibility }?.let { hips += it }
+    landmarks.getOrNull(PoseJoints.RIGHT_HIP)?.takeIf { it.visibility >= minVisibility }?.let { hips += it }
+    if (shoulders.isEmpty() || hips.isEmpty()) return null
+    val sx = shoulders.sumOf { it.x.toDouble() }.toFloat() / shoulders.size
+    val sy = shoulders.sumOf { it.y.toDouble() }.toFloat() / shoulders.size
+    val hx = hips.sumOf { it.x.toDouble() }.toFloat() / hips.size
+    val hy = hips.sumOf { it.y.toDouble() }.toFloat() / hips.size
+    val angle = Math.toDegrees(
+        atan2(abs(sy - hy).toDouble(), abs(sx - hx).toDouble()),
+    ).toFloat()
+    return TorsoAxis(
+        cx = (sx + hx) / 2f,
+        cy = (sy + hy) / 2f,
+        angleDeg = angle,
     )
-    if (joints.size <= PoseJoints.RIGHT_HIP) return null
-    var x = 0f
-    var y = 0f
-    for (index in indices) {
-        val row = joints[index]
-        val visibility = row.getOrElse(2) { 1f }
-        if (row.size < 2 || visibility < minVisibility) return null
-        x += row[0]
-        y += row[1]
-    }
-    return x / indices.size to y / indices.size
+}
+
+/** Average of the visible shoulder group and the visible hip group. */
+fun torsoCenter(joints: Array<FloatArray>, minVisibility: Float = DEFAULT_MIN_VISIBILITY): Pair<Float, Float>? {
+    val axis = torsoAxis(joints.toJointPoints(), minVisibility) ?: return null
+    return axis.cx to axis.cy
+}
+
+fun Array<FloatArray>.toJointPoints(): List<JointPoint> = map { row ->
+    JointPoint(
+        x = row.getOrElse(0) { 0f },
+        y = row.getOrElse(1) { 0f },
+        visibility = row.getOrElse(2) { 1f },
+    )
 }

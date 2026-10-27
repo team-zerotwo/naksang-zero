@@ -140,7 +140,7 @@ fun SettingsScreen(
         }
         Spacer(Modifier.height(16.dp))
         NaksangButton("저장") {
-            val parsed = parse(dropMs, drop, angle, still, move, fpsText)
+            val parsed = parse(dropMs, drop, angle, still, move, fpsText, config)
             if (parsed == null) {
                 error = "숫자를 다시 확인해 주세요."
             } else {
@@ -186,6 +186,7 @@ private fun parse(
     still: String,
     move: String,
     fps: String,
+    base: FallConfig,
 ): Pair<FallConfig, Int>? {
     val dropWindow = dropMs.toLongOrNull() ?: return null
     val minDrop = drop.toFloatOrNull() ?: return null
@@ -201,7 +202,7 @@ private fun parse(
     if (frames !in 2..10) return null
     val release = (lie + 17f).coerceAtMost(80f)
     val upright = max(58f, lie + 20f).coerceAtMost(89f)
-    return FallConfig(
+    return base.copy(
         dropWindowMs = dropWindow,
         minDrop = minDrop,
         maxLieAngleDeg = lie,

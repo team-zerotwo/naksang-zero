@@ -79,6 +79,100 @@ class FallDetectorTest {
         val fired = FallDetector(strict).feed(hold(stand(), lying(), 1_000, 1_500, 5_000))
         assertNull(fired)
     }
+
+    @Test
+    fun `한쪽 어깨와 엉덩이만 보여도 낙상`() {
+        val frames = hold(stand(), lying(), 1_000, 1_500, 5_000).map { (t, pose) ->
+            t to withVisibility(pose, PoseJoints.RIGHT_SHOULDER, PoseJoints.RIGHT_HIP, visibility = 0.1f)
+        }
+        val fired = FallDetector().feed(frames)
+        assertTrue("한쪽만 보여도 낙상입니다. fired=$fired", fired != null)
+    }
+
+    @Test
+    fun `가시성 0_35는 보고 그 아래는 버린다`() {
+        val seen = hold(stand(), lying(), 1_000, 1_500, 5_000).map { (t, pose) ->
+            t to setTorsoVisibility(pose, 0.35f)
+        }
+        assertTrue(FallDetector().feed(seen) != null)
+        val missed = hold(stand(), lying(), 1_000, 1_500, 5_000).map { (t, pose) ->
+            t to setTorsoVisibility(pose, 0.34f)
+        }
+        assertNull(FallDetector().feed(missed))
+    }
+
+    @Test
+    fun `정지 중 떨림은 낙상을 끊지 않는다`() {
+        // ±0.04 is above stillMovement (0.035). Smoothing keeps the center inside it.
+        val stable = hold(stand(), lying(), 1_000, 1_500, 2_400)
+        val jitter = (2_500L..6_000L step 100L).mapIndexed { index, t ->
+            val dy = if (index % 2 == 0) 0.04f else -0.04f
+            t to shift(lying(), dx = 0f, dy = dy)
+        }
+        val fired = FallDetector().feed(stable + jitter)
+        assertTrue("떨림보다 평활이 우선입니다. fired=$fired", fired != null)
+        val raw = FallDetector(FallConfig(smoothAlpha = 1f)).feed(stable + jitter)
+        assertNull("평활 없이는 떨림이 정지를 리셋합니다. fired=$raw", raw)
+    }
+
+    @Test
+    fun `낙상 도중 몇 프레임이 빠져도 이어서 판정`() {
+        val before = hold(stand(), lying(), leadIn = 1_000, transitionEnd = 1_500, until = 2_200)
+        val after = (3_200L..6_000L step 100L).map { it to lying() }
+        val fired = FallDetector().feed(before + after)
+        assertTrue("1초 공백 뒤에도 낙상입니다. fired=$fired", fired != null)
+    }
+
+    @Test
+    fun `낙상 끝에 몸통이 잠깐 가려져도 낙상`() {
+        val frames = hold(stand(), lying(), 1_000, 1_500, 5_000).map { (t, pose) ->
+            if (t in 1_800L..2_600L) {
+                t to withVisibility(
+                    pose,
+                    PoseJoints.LEFT_SHOULDER,
+                    PoseJoints.RIGHT_SHOULDER,
+                    PoseJoints.LEFT_HIP,
+                    visibility = 0.05f,
+                )
+            } else {
+                t to pose
+            }
+        }
+        val fired = FallDetector().feed(frames)
+        assertTrue("가려진 뒤에도 낙상입니다. fired=$fired", fired != null)
+    }
+
+    @Test
+    fun `사람을 오래 놓치면 정지 시간을 다시 센다`() {
+        val before = hold(stand(), lying(), leadIn = 1_000, transitionEnd = 1_500, until = 2_200)
+        val tooSoon = (5_000L..6_400L step 100L).map { it to lying() }
+        assertNull(FallDetector().feed(before + tooSoon))
+        val longEnough = (5_000L..8_500L step 100L).map { it to lying() }
+        val fired = FallDetector().feed(before + longEnough)
+        assertTrue("긴 공백 뒤 다시 멈추면 낙상입니다. fired=$fired", fired != null)
+    }
+
+    @Test
+    fun `어깨만 보이면 낙상도 중심도 없다`() {
+        val frames = hold(stand(), lying(), 1_000, 1_500, 4_000).map { (t, pose) ->
+            t to withVisibility(pose, PoseJoints.LEFT_HIP, PoseJoints.RIGHT_HIP, visibility = 0f)
+        }
+        assertNull(FallDetector().feed(frames))
+        val shouldersOnly = stand()
+        shouldersOnly[PoseJoints.LEFT_HIP][2] = 0f
+        shouldersOnly[PoseJoints.RIGHT_HIP][2] = 0f
+        assertNull(torsoCenter(shouldersOnly))
+    }
+
+    @Test
+    fun `몸통 중심은 보이는 한쪽만으로도 나온다`() {
+        val pose = stand()
+        pose[PoseJoints.RIGHT_SHOULDER][2] = 0f
+        pose[PoseJoints.RIGHT_HIP][2] = 0f
+        val center = torsoCenter(pose)
+        assertEquals(0.43f, center?.first ?: -1f, 0.001f)
+        assertEquals(0.34f, center?.second ?: -1f, 0.001f)
+    }
 }
 
 private fun FallDetector.feed(frames: List<Pair<Long, Array<FloatArray>>>): Long? {
@@ -159,3 +253,26 @@ private fun squatting() = pose(
     lh = floatArrayOf(0.48f, 0.68f),
     rh = floatArrayOf(0.64f, 0.70f),
 )
+
+private fun withVisibility(pose: Array<FloatArray>, vararg hidden: Int, visibility: Float): Array<FloatArray> {
+    val copy = pose.map { it.copyOf() }.toTypedArray()
+    for (index in hidden) copy[index][2] = visibility
+    return copy
+}
+
+private fun setTorsoVisibility(pose: Array<FloatArray>, visibility: Float): Array<FloatArray> {
+    return withVisibility(
+        pose,
+        PoseJoints.LEFT_SHOULDER,
+        PoseJoints.RIGHT_SHOULDER,
+        PoseJoints.LEFT_HIP,
+        PoseJoints.RIGHT_HIP,
+        visibility = visibility,
+    )
+}
+
+private fun shift(pose: Array<FloatArray>, dx: Float, dy: Float): Array<FloatArray> {
+    return Array(pose.size) { index ->
+        floatArrayOf(pose[index][0] + dx, pose[index][1] + dy, pose[index][2])
+    }
+}
