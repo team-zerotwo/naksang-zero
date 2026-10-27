@@ -158,3 +158,38 @@ tasks.withType<Test>().configureEach {
         }
     }
 }
+
+// Test-only. Replays landmark CSVs through FallDetector. Does not change the APK.
+afterEvaluate {
+    tasks.register<Test>("replayCaucaFall") {
+        group = "verification"
+        description =
+            "Replay CAUCAFall landmark CSVs through the shipped FallDetector. " +
+            "Pass -PcsvDir=... (directory containing manifest.csv) and optional -PoutDir=..."
+        val source = tasks.named<Test>("testDebugUnitTest").get()
+        testClassesDirs = source.testClassesDirs
+        classpath = source.classpath
+        dependsOn(source.dependsOn)
+        useJUnit()
+        filter {
+            includeTestsMatching("kr.zerotwo.naksang.detect.CaucaFallDatasetReplayTest")
+        }
+        val csvDir = (project.findProperty("csvDir") as String?).orEmpty()
+        val outDir = (project.findProperty("outDir") as String?)
+            ?: rootProject.projectDir.parentFile.resolve("ml/validation/out/replay").absolutePath
+        systemProperty("cauca.csvDir", csvDir)
+        systemProperty("cauca.outDir", outDir)
+        binaryResultsDirectory.set(layout.buildDirectory.dir("test-results/replayCaucaFall/binary"))
+        reports.junitXml.outputLocation.set(layout.buildDirectory.dir("test-results/replayCaucaFall"))
+        reports.html.outputLocation.set(layout.buildDirectory.dir("reports/tests/replayCaucaFall"))
+        outputs.upToDateWhen { false }
+        doFirst {
+            if (csvDir.isBlank()) {
+                error("Pass -PcsvDir=/path/to/landmarks (a directory that contains manifest.csv)")
+            }
+            if (!File(csvDir, "manifest.csv").isFile) {
+                error("No manifest.csv in $csvDir")
+            }
+        }
+    }
+}

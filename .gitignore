@@ -9,3 +9,10 @@ data/
 .DS_Store
 *.log
 dev-dist/
+
+# CAUCAFall is downloaded locally for offline validation and is not part of the repo.
+ml/validation/data/
+ml/validation/out/
+ml/validation/.venv/
+ml/validation/models/
+ml/validation/**/__pycache__/

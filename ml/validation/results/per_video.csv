@@ -1,0 +1,101 @@
+video_id,subject,activity,kind,activity_type,onset_ms,duration_ms,frames,pose_frames,pose_fraction,detected,detected_at_ms,delay_ms,blocker,unblocked_by,median_torso_len,min_angle_deg,max_drop_800,longest_gap_ms,edge_fraction,pose_fraction_after_lowest,tail_after_onset_ms
+s01_backward,Subject.1,Fall backwards,fall,backward,2900,6250,31,27,0.87097,0,,,combined_thresholds,,0.10171,24.65242,0.08421,600,0.00000,,3350
+s01_forward,Subject.1,Fall forward,fall,forward,6550,9500,48,24,0.50000,0,,,no_fall_pattern,,0.13653,67.37932,0.27279,1400,0.00000,0.72414,2950
+s01_from_sitting,Subject.1,Fall sitting,fall,from_sitting,4900,9100,46,46,1.00000,1,8200,3300,,,0.12428,0.57994,0.28998,200,0.00000,,4200
+s01_hopping,Subject.1,Hop,adl,hopping,,9100,46,46,1.00000,0,,,,,0.18796,43.52250,0.09568,200,0.00000,1.00000,
+s01_kneeling,Subject.1,Kneel,adl,kneeling,,10950,55,43,0.78182,0,,,,,0.11757,26.42956,0.17182,800,0.00000,0.79167,
+s01_left,Subject.1,Fall left,fall,left,2200,4300,22,17,0.77273,0,,,no_fall_pattern,,0.13996,67.14133,0.24162,800,0.00000,0.83333,2100
+s01_picking_up,Subject.1,Pick up object,adl,picking_up,,5850,29,20,0.68966,0,,,,,0.13458,78.12433,0.12169,800,0.00000,0.73077,
+s01_right,Subject.1,Fall right,fall,right,2800,5700,29,21,0.72414,0,,,combined_thresholds,,0.11283,0.26220,0.26848,1000,0.00000,1.00000,2900
+s01_sitting,Subject.1,Sit down,adl,sitting,,9350,47,41,0.87234,0,,,,,0.15825,47.83958,0.16600,800,0.00000,0.93103,
+s01_walking,Subject.1,Walk,adl,walking,,12100,61,54,0.88525,0,,,,,0.15968,35.32664,0.52064,1000,0.00000,0.88136,
+s02_backward,Subject.2,Fall backwards,fall,backward,3150,5950,30,25,0.83333,0,,,combined_thresholds,,0.17359,7.63203,0.14795,1000,0.00000,1.00000,2800
+s02_forward,Subject.2,Fall forward,fall,forward,1200,5300,27,25,0.92593,0,,,no_fall_pattern,,0.16605,0.87867,0.30177,600,0.00000,0.92308,4100
+s02_from_sitting,Subject.2,Fall sitting,fall,from_sitting,4050,7850,39,38,0.97436,0,,,combined_thresholds,,0.14035,11.47735,0.10517,400,0.00000,1.00000,3800
+s02_hopping,Subject.2,Hop,adl,hopping,,8550,43,38,0.88372,0,,,,,0.17054,71.23030,0.60448,1000,0.00000,1.00000,
+s02_kneeling,Subject.2,Kneel,adl,kneeling,,6500,33,33,1.00000,0,,,,,0.16890,79.76414,0.17558,200,0.00000,,
+s02_left,Subject.2,Fall left,fall,left,1600,5450,27,27,1.00000,1,4200,2600,,,0.10373,10.33707,0.20145,200,0.00000,1.00000,3850
+s02_picking_up,Subject.2,Pick up object,adl,picking_up,,8300,42,38,0.90476,0,,,,,0.11719,0.80416,0.12951,800,0.00000,0.90000,
+s02_right,Subject.2,Fall right,fall,right,1650,7300,37,37,1.00000,0,,,combined_thresholds,,0.11714,15.03969,0.15116,200,0.00000,1.00000,5650
+s02_sitting,Subject.2,Sit down,adl,sitting,,5600,28,26,0.92857,0,,,,,0.19569,49.50417,0.16383,600,0.00000,,
+s02_walking,Subject.2,Walk,adl,walking,,12200,61,49,0.80328,0,,,,,0.19671,69.43357,0.42821,800,0.00000,0.80702,
+s03_backward,Subject.3,Fall backwards,fall,backward,3350,8300,42,25,0.59524,0,,,combined_thresholds,,0.16220,1.55744,0.12706,800,0.00000,0.38462,4950
+s03_forward,Subject.3,Fall forward,fall,forward,4200,7650,38,21,0.55263,0,,,combined_thresholds,,0.13484,2.65440,0.18155,1000,0.00000,0.60000,3450
+s03_from_sitting,Subject.3,Fall sitting,fall,from_sitting,2550,10100,51,20,0.39216,0,,,no_fall_pattern,,0.15770,35.24571,0.04311,2800,0.00000,0.28947,7550
+s03_hopping,Subject.3,Hop,adl,hopping,,8100,41,26,0.63415,0,,,,,0.17477,56.50723,0.35620,1200,0.00000,0.30769,
+s03_kneeling,Subject.3,Kneel,adl,kneeling,,10650,53,32,0.60377,0,,,,,0.16641,10.02523,0.20586,1400,0.00000,0.75000,
+s03_left,Subject.3,Fall left,fall,left,5100,8550,43,36,0.83721,0,,,combined_thresholds,,0.20893,31.33875,0.31022,600,0.00000,1.00000,3450
+s03_picking_up,Subject.3,Pick up object,adl,picking_up,,9300,47,41,0.87234,0,,,,,0.19404,13.12258,0.14182,1000,0.00000,0.86957,
+s03_right,Subject.3,Fall right,fall,right,2650,11000,55,34,0.61818,0,,,combined_thresholds,,0.13150,3.88441,0.13246,1200,0.00000,,8350
+s03_sitting,Subject.3,Sit down,adl,sitting,,13050,65,44,0.67692,0,,,,,0.13357,22.57031,0.12669,1000,0.00000,0.67188,
+s03_walking,Subject.3,Walk,adl,walking,,8800,44,30,0.68182,0,,,,,0.20295,63.91275,0.41349,1800,0.00000,0.90909,
+s04_backward,Subject.4,Fall backwards,fall,backward,3500,9600,48,40,0.83333,0,,,no_fall_pattern,,0.15433,78.63988,0.50551,1000,0.00000,0.88235,6100
+s04_forward,Subject.4,Fall forward,fall,forward,1250,8400,42,36,0.85714,0,,,no_fall_pattern,,0.15786,30.97690,0.08208,800,0.00000,0.87500,7150
+s04_from_sitting,Subject.4,Fall sitting,fall,from_sitting,3050,9900,50,37,0.74000,0,,,no_fall_pattern,,0.10804,26.91584,0.07223,1400,0.00000,0.83333,6850
+s04_hopping,Subject.4,Hop,adl,hopping,,7200,36,27,0.75000,0,,,,,0.16240,73.47991,0.14841,1000,0.00000,0.78788,
+s04_kneeling,Subject.4,Kneel,adl,kneeling,,11100,56,51,0.91071,0,,,,,0.13629,7.96016,0.22662,600,0.00000,0.83333,
+s04_left,Subject.4,Fall left,fall,left,3050,8100,41,37,0.90244,0,,,combined_thresholds,,0.11749,22.60875,0.09745,1000,0.00000,1.00000,5050
+s04_picking_up,Subject.4,Pick up object,adl,picking_up,,8950,45,37,0.82222,0,,,,,0.19463,76.58476,0.35629,600,0.00000,0.63636,
+s04_right,Subject.4,Fall right,fall,right,2350,7500,38,36,0.94737,0,,,no_fall_pattern,,0.11504,42.09873,0.11424,400,0.00000,,5150
+s04_sitting,Subject.4,Sit down,adl,sitting,,9950,50,47,0.94000,0,,,,,0.14561,27.15206,0.34044,400,0.00000,0.95556,
+s04_walking,Subject.4,Walk,adl,walking,,12000,60,50,0.83333,0,,,,,0.17084,72.12659,0.07168,1200,0.00000,0.00000,
+s05_backward,Subject.5,Fall backwards,fall,backward,2400,10700,54,51,0.94444,0,,,combined_thresholds,,0.09944,2.92083,0.12452,600,0.00000,,8300
+s05_forward,Subject.5,Fall forward,fall,forward,2900,10000,50,16,0.32000,0,,,no_fall_pattern,,0.18510,4.60302,0.20383,2000,0.00000,0.26667,7100
+s05_from_sitting,Subject.5,Fall sitting,fall,from_sitting,3450,11450,57,52,0.91228,0,,,drop_window,drop_window,0.13307,0.03959,0.15252,400,0.00000,0.85714,8000
+s05_hopping,Subject.5,Hop,adl,hopping,,6100,31,26,0.83871,0,,,,,0.20378,66.05660,0.16184,200,0.00000,1.00000,
+s05_kneeling,Subject.5,Kneel,adl,kneeling,,10400,52,48,0.92308,0,,,,,0.16290,3.65902,0.18651,600,0.00000,1.00000,
+s05_left,Subject.5,Fall left,fall,left,3800,12350,62,50,0.80645,0,,,no_fall_pattern,,0.21699,0.14595,0.09622,1000,0.00000,0.86275,8550
+s05_picking_up,Subject.5,Pick up object,adl,picking_up,,13550,68,14,0.20588,0,,,,,0.19885,42.00641,0.00758,5200,0.00000,0.20000,
+s05_right,Subject.5,Fall right,fall,right,3750,10950,55,34,0.61818,0,,,combined_thresholds,,0.10875,15.18888,0.29619,600,0.00000,0.60000,7200
+s05_sitting,Subject.5,Sit down,adl,sitting,,13000,65,61,0.93846,0,,,,,0.17405,2.84473,0.09956,600,0.00000,0.94872,
+s05_walking,Subject.5,Walk,adl,walking,,11300,57,45,0.78947,0,,,,,0.19872,58.81055,0.40076,800,0.00000,0.00000,
+s06_backward,Subject.6,Fall backwards,fall,backward,4550,11700,59,30,0.50847,0,,,no_fall_pattern,,0.18365,56.42667,0.12656,1600,0.00000,0.25641,7150
+s06_forward,Subject.6,Fall forward,fall,forward,4150,10100,51,18,0.35294,0,,,no_fall_pattern,,0.13650,33.77014,0.31882,1200,0.00000,0.29167,5950
+s06_from_sitting,Subject.6,Fall sitting,fall,from_sitting,5350,12400,62,46,0.74194,0,,,combined_thresholds,,0.11618,0.15230,0.12373,1000,0.00000,0.42105,7050
+s06_hopping,Subject.6,Hop,adl,hopping,,8100,41,28,0.68293,0,,,,,0.19718,72.46285,0.17094,400,0.00000,0.94737,
+s06_kneeling,Subject.6,Kneel,adl,kneeling,,9450,47,33,0.70213,0,,,,,0.13414,40.22240,0.16437,1400,0.00000,0.30000,
+s06_left,Subject.6,Fall left,fall,left,2550,11450,57,10,0.17544,0,,,no_fall_pattern,,0.14980,51.96952,0.14411,2800,0.00000,0.02564,8900
+s06_picking_up,Subject.6,Pick up object,adl,picking_up,,10100,51,22,0.43137,0,,,,,0.18298,8.92565,0.08909,5000,0.00000,0.83333,
+s06_right,Subject.6,Fall right,fall,right,4050,11450,57,17,0.29825,0,,,no_fall_pattern,,0.16870,0.09089,0.16369,4800,0.00000,0.00000,7400
+s06_sitting,Subject.6,Sit down,adl,sitting,,9450,47,41,0.87234,0,,,,,0.16165,8.08187,0.09440,600,0.00000,0.88000,
+s06_walking,Subject.6,Walk,adl,walking,,13300,67,37,0.55224,0,,,,,0.18259,79.25885,0.09693,3200,0.00000,0.28947,
+s07_backward,Subject.7,Fall backwards,fall,backward,4600,12600,63,59,0.93651,0,,,min_drop+drop_window,min_drop|drop_window,0.11089,0.05012,0.26137,600,0.00000,1.00000,8000
+s07_forward,Subject.7,Fall forward,fall,forward,2150,8100,41,34,0.82927,0,,,no_fall_pattern,,0.15086,35.04757,0.26312,600,0.00000,,5950
+s07_from_sitting,Subject.7,Fall sitting,fall,from_sitting,2350,10350,52,35,0.67308,0,,,no_fall_pattern,,0.13797,0.82296,0.11770,1000,0.00000,0.57143,8000
+s07_hopping,Subject.7,Hop,adl,hopping,,9900,50,37,0.74000,0,,,,,0.17449,63.95192,0.42339,2000,0.00000,0.73469,
+s07_kneeling,Subject.7,Kneel,adl,kneeling,,10100,51,43,0.84314,0,,,,,0.12185,7.76317,0.15660,600,0.00000,1.00000,
+s07_left,Subject.7,Fall left,fall,left,3650,10600,53,45,0.84906,0,,,combined_thresholds,,0.10714,0.12695,0.18707,800,0.00000,0.87500,6950
+s07_picking_up,Subject.7,Pick up object,adl,picking_up,,7650,38,34,0.89474,0,,,,,0.14943,6.77327,0.08612,600,0.00000,0.88889,
+s07_right,Subject.7,Fall right,fall,right,2300,8300,42,37,0.88095,0,,,min_drop+drop_window,min_drop|drop_window,0.11587,6.00402,0.15042,600,0.00000,1.00000,6000
+s07_sitting,Subject.7,Sit down,adl,sitting,,9650,48,47,0.97917,0,,,,,0.16537,69.63242,0.08919,400,0.00000,1.00000,
+s07_walking,Subject.7,Walk,adl,walking,,9650,48,40,0.83333,0,,,,,0.18610,65.51118,0.44248,800,0.00000,0.96000,
+s08_backward,Subject.8,Fall backwards,fall,backward,3200,10600,53,17,0.32075,0,,,no_fall_pattern,,0.16664,3.39133,0.09334,2200,0.00000,0.17241,7400
+s08_forward,Subject.8,Fall forward,fall,forward,2000,6100,31,0,0.00000,0,,,no_pose,,,,,,,,4100
+s08_from_sitting,Subject.8,Fall sitting,fall,from_sitting,4000,11700,59,50,0.84746,0,,,combined_thresholds,,0.11690,5.40954,0.05981,1200,0.00000,1.00000,7700
+s08_hopping,Subject.8,Hop,adl,hopping,,8300,42,23,0.54762,0,,,,,0.18916,76.75402,0.17987,3400,0.00000,1.00000,
+s08_kneeling,Subject.8,Kneel,adl,kneeling,,12800,64,16,0.25000,0,,,,,0.11443,65.62423,0.06349,3800,0.00000,0.00000,
+s08_left,Subject.8,Fall left,fall,left,2850,10100,51,11,0.21569,0,,,no_fall_pattern,,0.16255,13.41296,0.17767,1200,0.00000,0.00000,7250
+s08_picking_up,Subject.8,Pick up object,adl,picking_up,,13300,67,9,0.13433,0,,,,,0.15336,39.79177,-0.02883,9800,0.00000,0.12500,
+s08_right,Subject.8,Fall right,fall,right,2950,11450,57,0,0.00000,0,,,no_pose,,,,,,,,8500
+s08_sitting,Subject.8,Sit down,adl,sitting,,10600,53,21,0.39623,0,,,,,0.13494,43.17212,0.05000,1400,0.00000,0.39286,
+s08_walking,Subject.8,Walk,adl,walking,,10800,54,28,0.51852,0,,,,,0.17032,71.68212,0.11752,2000,0.00000,0.39286,
+s09_backward,Subject.9,Fall backwards,fall,backward,3250,12600,63,59,0.93651,0,,,min_drop,min_drop,0.10454,0.71725,0.15728,1000,0.00000,1.00000,9350
+s09_forward,Subject.9,Fall forward,fall,forward,2800,7400,37,32,0.86486,0,,,no_fall_pattern,,0.17929,5.74792,0.25026,400,0.00000,1.00000,4600
+s09_from_sitting,Subject.9,Fall sitting,fall,from_sitting,4450,10800,54,49,0.90741,0,,,combined_thresholds,,0.14218,0.02491,0.16444,600,0.00000,0.80000,6350
+s09_hopping,Subject.9,Hop,adl,hopping,,10600,53,49,0.92453,0,,,,,0.18638,67.56765,0.16919,600,0.00000,0.95238,
+s09_kneeling,Subject.9,Kneel,adl,kneeling,,10800,54,52,0.96296,0,,,,,0.16589,29.14444,0.14508,400,0.00000,1.00000,
+s09_left,Subject.9,Fall left,fall,left,2750,10350,52,48,0.92308,0,,,no_fall_pattern,,0.14011,31.26942,0.22982,600,0.00000,1.00000,7600
+s09_picking_up,Subject.9,Pick up object,adl,picking_up,,11000,55,43,0.78182,0,,,,,0.16118,0.82069,0.16228,800,0.00000,0.74074,
+s09_right,Subject.9,Fall right,fall,right,2850,9450,47,40,0.85106,0,,,drop_window,drop_window,0.13363,2.62989,0.22787,1200,0.00000,1.00000,6600
+s09_sitting,Subject.9,Sit down,adl,sitting,,11900,60,51,0.85000,0,,,,,0.16426,35.69270,0.13915,800,0.00000,1.00000,
+s09_walking,Subject.9,Walk,adl,walking,,11700,59,46,0.77966,0,,,,,0.20135,60.12037,0.13574,1200,0.00000,0.82759,
+s10_backward,Subject.10,Fall backwards,fall,backward,3900,13700,69,46,0.66667,0,,,combined_thresholds,,0.11394,0.68538,0.16897,2000,0.00000,0.65385,9800
+s10_forward,Subject.10,Fall forward,fall,forward,2650,12150,61,32,0.52459,0,,,no_fall_pattern,,0.15410,24.19089,0.21732,2000,0.00000,0.54054,9500
+s10_from_sitting,Subject.10,Fall sitting,fall,from_sitting,3800,14400,72,25,0.34722,0,,,no_fall_pattern,,0.16276,18.29635,0.06154,2800,0.00000,0.27027,10600
+s10_hopping,Subject.10,Hop,adl,hopping,,12400,62,48,0.77419,0,,,,,0.20112,56.38930,0.31598,1000,0.00000,0.72973,
+s10_kneeling,Subject.10,Kneel,adl,kneeling,,13050,65,52,0.80000,0,,,,,0.14032,0.32305,0.32304,600,0.00000,1.00000,
+s10_left,Subject.10,Fall left,fall,left,2500,10600,53,40,0.75472,0,,,combined_thresholds,,0.13785,0.30471,0.15186,600,0.00000,0.79592,8100
+s10_picking_up,Subject.10,Pick up object,adl,picking_up,,14600,73,48,0.65753,0,,,,,0.15186,4.64945,0.21702,1400,0.00000,0.95652,
+s10_right,Subject.10,Fall right,fall,right,3700,10100,51,41,0.80392,0,,,drop_window,drop_window,0.12674,8.40939,0.19511,800,0.00000,0.96154,6400
+s10_sitting,Subject.10,Sit down,adl,sitting,,11700,59,47,0.79661,0,,,,,0.14683,10.56702,0.28399,1000,0.00000,0.79630,
+s10_walking,Subject.10,Walk,adl,walking,,11200,56,37,0.66071,0,,,,,0.17128,56.74158,0.34411,3200,0.00000,0.56410,
