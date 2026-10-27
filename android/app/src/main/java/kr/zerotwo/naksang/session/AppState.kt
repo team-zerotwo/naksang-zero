@@ -2,6 +2,7 @@ package kr.zerotwo.naksang.session
 
 import kr.zerotwo.naksang.data.PendingFall
 import kr.zerotwo.naksang.detect.FallConfig
+import kr.zerotwo.naksang.detect.JointPoint
 
 enum class Phase {
     NEED_CONNECT,
@@ -42,6 +43,10 @@ data class AppState(
     val personVisible: Boolean = false,
     val personX: Float = 0.5f,
     val personY: Float = 0.45f,
+    /** Latest pose in normalized upright-frame coordinates. Empty when nobody is in frame. Not persisted. */
+    val poseLandmarks: List<JointPoint> = emptyList(),
+    val poseFrameWidth: Int = 0,
+    val poseFrameHeight: Int = 0,
     val batteryPercent: Int = -1,
     val charging: Boolean = false,
     val heartbeatOk: Boolean? = null,

@@ -10,6 +10,7 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import androidx.camera.core.Preview
+import androidx.camera.core.ViewPort
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -37,11 +38,11 @@ import kr.zerotwo.naksang.data.PendingFall
 import kr.zerotwo.naksang.data.SessionStore
 import kr.zerotwo.naksang.detect.FallConfig
 import kr.zerotwo.naksang.detect.FallDetector
+import kr.zerotwo.naksang.detect.toJointPoints
 import kr.zerotwo.naksang.detect.torsoCenter
 import kr.zerotwo.naksang.service.FallDetectionService
 import kr.zerotwo.naksang.util.IsoTime
 import kr.zerotwo.naksang.util.ServerUrl
-import kotlin.math.abs
 
 class AppContainer(private val app: Context) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -70,6 +71,8 @@ class AppContainer(private val app: Context) {
             mainHandler.post { _state.update { it.copy(cameraError = message) } }
         }
         camera.onFrame = { bitmap, timestamp ->
+            val frameWidth = bitmap.width
+            val frameHeight = bitmap.height
             val joints = try {
                 poseReader.read(bitmap)
             } finally {
@@ -80,7 +83,7 @@ class AppContainer(private val app: Context) {
                 if (modelFailed) {
                     _state.update { it.copy(cameraError = "포즈 모델을 열지 못했어요") }
                 }
-                onPose(timestamp, joints)
+                onPose(timestamp, joints, frameWidth, frameHeight)
             }
         }
         scope.launch {
@@ -165,18 +168,26 @@ class AppContainer(private val app: Context) {
             _state.update { it.copy(cameraError = "카메라 권한이 필요해요") }
             return
         }
-        _state.update { it.copy(route = Route.Camera, errorMessage = null, cameraError = null) }
+        _state.update {
+            it.copy(
+                route = Route.Camera,
+                errorMessage = null,
+                cameraError = null,
+                personVisible = false,
+                poseLandmarks = emptyList(),
+            )
+        }
         camera.setLens(_state.value.cameraFacingFront)
         camera.start()
     }
 
     fun backFromCamera() {
-        _state.update { it.copy(route = Route.Connect) }
+        _state.update { it.copy(route = Route.Connect, personVisible = false, poseLandmarks = emptyList()) }
         if (!serviceRunning) camera.stop()
     }
 
-    fun attachPreview(surface: Preview.SurfaceProvider?) {
-        camera.setPreview(surface)
+    fun attachPreview(surface: Preview.SurfaceProvider?, viewPort: ViewPort? = null) {
+        camera.setPreview(surface, viewPort)
     }
 
     fun startWatching() {
@@ -193,6 +204,8 @@ class AppContainer(private val app: Context) {
                 watchingSince = since,
                 errorMessage = null,
                 cameraError = null,
+                personVisible = false,
+                poseLandmarks = emptyList(),
             )
         }
         persist()
@@ -353,16 +366,33 @@ class AppContainer(private val app: Context) {
         _state.update { it.copy(batteryPercent = percent, charging = charging) }
     }
 
-    private fun onPose(timestampMs: Long, joints: Array<FloatArray>?) {
-        val center = joints?.let { torsoCenter(it) }
+    private fun onPose(
+        timestampMs: Long,
+        joints: Array<FloatArray>?,
+        frameWidth: Int,
+        frameHeight: Int,
+    ) {
         val current = _state.value
-        if (center == null) {
-            if (current.personVisible) _state.update { it.copy(personVisible = false) }
-        } else if (!current.personVisible ||
-            abs(center.first - current.personX) > 0.02f ||
-            abs(center.second - current.personY) > 0.02f
-        ) {
-            _state.update { it.copy(personVisible = true, personX = center.first, personY = center.second) }
+        val center = joints?.let { torsoCenter(it, current.fallConfig.minVisibility) }
+        if (current.route == Route.Camera) {
+            if (center == null || joints == null) {
+                if (current.personVisible || current.poseLandmarks.isNotEmpty()) {
+                    _state.update { it.copy(personVisible = false, poseLandmarks = emptyList()) }
+                }
+            } else {
+                _state.update {
+                    it.copy(
+                        personVisible = true,
+                        personX = center.first,
+                        personY = center.second,
+                        poseLandmarks = joints.toJointPoints(),
+                        poseFrameWidth = frameWidth,
+                        poseFrameHeight = frameHeight,
+                    )
+                }
+            }
+        } else if (current.personVisible || current.poseLandmarks.isNotEmpty()) {
+            _state.update { it.copy(personVisible = false, poseLandmarks = emptyList()) }
         }
         if (current.phase == Phase.WATCHING && joints != null) {
             if (detector.onJointArray(timestampMs, joints)) beginCountdown(isTest = false)

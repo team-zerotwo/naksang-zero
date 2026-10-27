@@ -1,5 +1,7 @@
 package kr.zerotwo.naksang.ui.screens
 
+import android.view.View
+import androidx.camera.core.ViewPort
 import androidx.camera.view.PreviewView
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
@@ -26,13 +28,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.PathEffect
-import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
@@ -41,6 +40,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import kr.zerotwo.naksang.R
+import kr.zerotwo.naksang.detect.DEFAULT_MIN_VISIBILITY
+import kr.zerotwo.naksang.detect.JointPoint
+import kr.zerotwo.naksang.detect.layoutSkeleton
+import kr.zerotwo.naksang.detect.mapPosePoint
 import kr.zerotwo.naksang.ui.components.DisplayText
 import kr.zerotwo.naksang.ui.components.NaksangButton
 import kr.zerotwo.naksang.ui.components.NaksangIcon
@@ -56,10 +59,14 @@ fun CameraPlaceScreen(
     mirrorX: Boolean,
     cameraError: String?,
     showLiveCamera: Boolean,
-    onPreviewReady: (androidx.camera.core.Preview.SurfaceProvider) -> Unit,
+    onPreviewReady: (androidx.camera.core.Preview.SurfaceProvider, ViewPort?) -> Unit,
     onPreviewGone: () -> Unit,
     onBack: () -> Unit,
     onStart: () -> Unit,
+    landmarks: List<JointPoint> = emptyList(),
+    frameWidth: Int = 0,
+    frameHeight: Int = 0,
+    minVisibility: Float = DEFAULT_MIN_VISIBILITY,
 ) {
     Box(Modifier.fillMaxSize().background(NaksangColors.Text)) {
         Box(Modifier.fillMaxSize().padding(bottom = 300.dp)) {
@@ -73,8 +80,17 @@ fun CameraPlaceScreen(
                 }
                 AndroidView(factory = { previewView }, modifier = Modifier.fillMaxSize())
                 DisposableEffect(previewView) {
-                    onPreviewReady(previewView.surfaceProvider)
-                    onDispose { onPreviewGone() }
+                    val push = {
+                        val port = runCatching { previewView.viewPort }.getOrNull()
+                        onPreviewReady(previewView.surfaceProvider, port)
+                    }
+                    val listener = View.OnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> push() }
+                    previewView.addOnLayoutChangeListener(listener)
+                    previewView.post { push() }
+                    onDispose {
+                        previewView.removeOnLayoutChangeListener(listener)
+                        onPreviewGone()
+                    }
                 }
             } else {
                 Image(
@@ -94,7 +110,16 @@ fun CameraPlaceScreen(
                         ),
                     ),
             )
-            PersonOverlay(personVisible, personX, personY, mirrorX)
+            PersonOverlay(
+                visible = personVisible,
+                personX = personX,
+                personY = personY,
+                landmarks = landmarks,
+                frameWidth = frameWidth,
+                frameHeight = frameHeight,
+                mirrorX = mirrorX,
+                minVisibility = minVisibility,
+            )
             Row(
                 Modifier
                     .statusBarsPadding()
@@ -165,21 +190,67 @@ fun CameraPlaceScreen(
 }
 
 @Composable
-private fun PersonOverlay(visible: Boolean, personX: Float, personY: Float, mirrorX: Boolean) {
+private fun PersonOverlay(
+    visible: Boolean,
+    personX: Float,
+    personY: Float,
+    landmarks: List<JointPoint>,
+    frameWidth: Int,
+    frameHeight: Int,
+    mirrorX: Boolean,
+    minVisibility: Float,
+) {
     Canvas(Modifier.fillMaxSize()) {
         if (!visible) return@Canvas
-        val xNorm = if (mirrorX) 1f - personX else personX
-        val boxW = 120.dp.toPx()
-        val boxH = 210.dp.toPx()
-        val left = (size.width * xNorm - boxW / 2f).coerceIn(12.dp.toPx(), (size.width - boxW - 12.dp.toPx()).coerceAtLeast(0f))
-        val top = (size.height * personY - boxH / 2f).coerceIn(72.dp.toPx(), (size.height - boxH - 12.dp.toPx()).coerceAtLeast(0f))
-        drawRoundRect(
-            color = Color.White,
-            topLeft = Offset(left, top),
-            size = Size(boxW, boxH),
-            cornerRadius = CornerRadius(18.dp.toPx()),
-            style = Stroke(width = 3.dp.toPx(), pathEffect = PathEffect.dashPathEffect(floatArrayOf(16f, 12f))),
+        if (landmarks.isEmpty()) {
+            val anchor = mapPosePoint(
+                normX = personX,
+                normY = personY,
+                frameWidth = frameWidth,
+                frameHeight = frameHeight,
+                viewWidth = size.width,
+                viewHeight = size.height,
+                mirrorX = mirrorX,
+            )
+            drawCircle(color = Color.White, radius = 8.dp.toPx(), center = Offset(anchor.x, anchor.y))
+            drawCircle(color = NaksangColors.Ok, radius = 5.dp.toPx(), center = Offset(anchor.x, anchor.y))
+            return@Canvas
+        }
+        val layout = layoutSkeleton(
+            landmarks = landmarks,
+            minVisibility = minVisibility,
+            frameWidth = frameWidth,
+            frameHeight = frameHeight,
+            viewWidth = size.width,
+            viewHeight = size.height,
+            mirrorX = mirrorX,
         )
+        val outline = 5.dp.toPx()
+        val bone = 3.5.dp.toPx()
+        for ((start, end) in layout.lines) {
+            drawLine(
+                color = Color.White,
+                start = Offset(start.x, start.y),
+                end = Offset(end.x, end.y),
+                strokeWidth = outline,
+                cap = StrokeCap.Round,
+            )
+        }
+        for ((start, end) in layout.lines) {
+            drawLine(
+                color = NaksangColors.Ok,
+                start = Offset(start.x, start.y),
+                end = Offset(end.x, end.y),
+                strokeWidth = bone,
+                cap = StrokeCap.Round,
+            )
+        }
+        val dotRing = 4.6.dp.toPx()
+        val dot = 3.2.dp.toPx()
+        for (point in layout.dots) {
+            drawCircle(color = Color.White, radius = dotRing, center = Offset(point.x, point.y))
+            drawCircle(color = NaksangColors.Ok, radius = dot, center = Offset(point.x, point.y))
+        }
     }
     if (visible) {
         Text(

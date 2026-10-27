@@ -46,10 +46,14 @@ class PoseReader(private val context: Context) {
                         .build(),
                 )
                 .setRunningMode(RunningMode.IMAGE)
+                // One person in the room. Do not raise this.
                 .setNumPoses(1)
-                .setMinPoseDetectionConfidence(0.5f)
-                .setMinPosePresenceConfidence(0.5f)
-                .setMinTrackingConfidence(0.5f)
+                .setMinPoseDetectionConfidence(MIN_POSE_DETECTION_CONFIDENCE)
+                .setMinPosePresenceConfidence(MIN_POSE_PRESENCE_CONFIDENCE)
+                // IMAGE mode does not track across frames; the fall detector holds
+                // a short grace period instead. The value is set so a later switch
+                // to VIDEO does not jump back to 0.5.
+                .setMinTrackingConfidence(MIN_POSE_TRACKING_CONFIDENCE)
                 .build()
             PoseLandmarker.createFromOptions(context, options).also { landmarker = it }
         } catch (e: Exception) {
@@ -68,6 +72,18 @@ class PoseReader(private val context: Context) {
 
     companion object {
         private const val TAG = "NaksangPose"
+
+        /**
+         * Lite, not full. The full float16 task (~9.4MB) is the same kind of
+         * download as lite (~5.8MB), but this path stays on the CPU delegate at
+         * 640×480. The heavier network would add heat for an accuracy gain we
+         * cannot measure here. Pose quality gaps are handled by the lower
+         * confidence gates and by [kr.zerotwo.naksang.detect.FallDetector].
+         */
         const val MODEL = "pose_landmarker_lite.task"
+
+        const val MIN_POSE_DETECTION_CONFIDENCE = 0.35f
+        const val MIN_POSE_PRESENCE_CONFIDENCE = 0.35f
+        const val MIN_POSE_TRACKING_CONFIDENCE = 0.35f
     }
 }
