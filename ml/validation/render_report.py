@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import math
 import re
 import shutil
 import subprocess
@@ -150,7 +151,60 @@ def load_dataset_details(path: Path) -> dict:
     return subjects
 
 
-def explain(row: dict, detail: dict | None = None, light: dict | None = None) -> list[str]:
+def pose_geometry(csv_path: Path) -> dict:
+    """Raw torso series for the written explanation. The detector decision is not this."""
+    lowest_cy = None
+    lowest_angle = None
+    flat_frames = 0
+    samples = 0
+    for row in read_csv(csv_path):
+        shoulders = visible_points(row, (11, 12))
+        hips = visible_points(row, (23, 24))
+        if not shoulders or not hips:
+            continue
+        samples += 1
+        sx = sum(point[0] for point in shoulders) / len(shoulders)
+        sy = sum(point[1] for point in shoulders) / len(shoulders)
+        hx = sum(point[0] for point in hips) / len(hips)
+        hy = sum(point[1] for point in hips) / len(hips)
+        angle = math.degrees(math.atan2(abs(sy - hy), abs(sx - hx)))
+        cy = (sy + hy) / 2.0
+        if angle <= 28:
+            flat_frames += 1
+        if lowest_cy is None or cy > lowest_cy:
+            lowest_cy = cy
+            lowest_angle = angle
+    return {"samples": samples, "flat_frames": flat_frames, "angle_at_lowest": lowest_angle}
+
+
+def visible_points(row: dict, indexes: tuple[int, ...]) -> list[tuple[float, float]]:
+    points = []
+    for index in indexes:
+        x = num(row.get(f"l{index:02d}_x"))
+        y = num(row.get(f"l{index:02d}_y"))
+        visibility = num(row.get(f"l{index:02d}_v"))
+        if x is None or y is None or visibility is None or visibility < 0.35:
+            continue
+        points.append((x, y))
+    return points
+
+
+def median_ms(values: list[int]) -> int | None:
+    if not values:
+        return None
+    ordered = sorted(values)
+    mid = len(ordered) // 2
+    if len(ordered) % 2 == 1:
+        return ordered[mid]
+    return (ordered[mid - 1] + ordered[mid]) // 2
+
+
+def explain(
+    row: dict,
+    detail: dict | None = None,
+    light: dict | None = None,
+    geom: dict | None = None,
+) -> list[str]:
     notes = []
     if light and light.get("lux") == 0:
         notes.append("recorded with no visible light (0 lux), so the camera is on IR")
@@ -170,6 +224,19 @@ def explain(row: dict, detail: dict | None = None, light: dict | None = None) ->
     angle = num(row.get("min_angle_deg"))
     if angle is not None and angle > 28:
         notes.append(f"torso never lies flat (minimum angle {angle:.0f}°, threshold 28°)")
+    lowest = None if geom is None else geom.get("angle_at_lowest")
+    flat_frames = None if geom is None else geom.get("flat_frames")
+    if lowest is not None and lowest > 45 and (angle is None or angle <= 28):
+        notes.append(
+            f"at the lowest torso center the axis is still {lowest:.0f}° from horizontal"
+        )
+    if (
+        flat_frames is not None
+        and flat_frames <= 2
+        and pose_frames >= 3
+        and (angle is None or angle <= 28)
+    ):
+        notes.append(f"torso is within 28° of horizontal on {flat_frames} sampled frames")
     gap = num(row.get("longest_gap_ms"), int)
     if gap is not None and gap > 1200:
         notes.append(f"longest gap without a torso is {gap} ms, past the 1200 ms grace")
@@ -192,7 +259,10 @@ def blocker_title(code: str) -> str:
     if code in BLOCKER_LABEL:
         return BLOCKER_LABEL[code]
     parts = [BLOCKER_LABEL.get(part, part) for part in code.split("+")]
-    return " or ".join(parts)
+    if len(parts) == 1:
+        return parts[0]
+    rest = [part[:1].lower() + part[1:] if part else part for part in parts[1:]]
+    return parts[0] + "; also " + "; also ".join(rest)
 
 
 def config_distance(row: dict, default: dict) -> tuple:
@@ -385,21 +455,26 @@ def build_report(
     manifest_rows: list[dict],
     samples: list[tuple[str, str]],
     details: dict | None = None,
+    geometries: dict | None = None,
 ) -> str:
     falls = [row for row in videos if row["kind"] == "fall"]
     adls = [row for row in videos if row["kind"] == "adl"]
     fall_hits = [row for row in falls if row["detected"] == "1"]
     adl_hits = [row for row in adls if row["detected"] == "1"]
     delays = [int(row["delay_ms"]) for row in fall_hits if row.get("delay_ms")]
-    delays_sorted = sorted(delays)
-    median_delay = delays_sorted[len(delays_sorted) // 2] if delays_sorted else None
+    median_delay = median_ms(delays)
     excess = None if median_delay is None else median_delay - 2000
     subjects = sorted({row["subject"] for row in videos}, key=subject_number)
     manifest_by_id = {row["video_id"]: row for row in manifest_rows}
     widths = sorted({(row.get("width"), row.get("height")) for row in manifest_rows})
     analysis = sorted({(row.get("analysis_width"), row.get("analysis_height")) for row in manifest_rows})
     fps_values = [float(row["source_fps"]) for row in manifest_rows if row.get("source_fps")]
-    fps_text = f"{min(fps_values):.2f}–{max(fps_values):.2f}" if fps_values else "unknown"
+    if not fps_values:
+        fps_text = "unknown"
+    elif abs(min(fps_values) - max(fps_values)) < 0.01:
+        fps_text = f"{fps_values[0]:.2f}"
+    else:
+        fps_text = f"{min(fps_values):.2f}–{max(fps_values):.2f}"
     mismatch = sum(1 for row in manifest_rows if "frame_count_mismatch" in (row.get("notes") or ""))
     missing_onset = sum(1 for row in falls if not row.get("onset_ms"))
     default, recommended, best_recall = choose_recommendation(sweep)
@@ -451,7 +526,7 @@ def build_report(
         ]
         distance_text = ""
         if distances:
-            distance_text = f" Marked camera-to-fall distances run from {min(distances):.2f} m to {max(distances):.2f} m."
+            distance_text = f"Marked camera-to-fall distances run from {min(distances):.2f} m to {max(distances):.2f} m."
         lines.append("")
         lines.append(
             "Dataset details.xlsx records the light and, for falls, the distance and an occlusion mark. "
@@ -476,8 +551,8 @@ def build_report(
     if mismatch:
         lines.append("")
         lines.append(
-            f"{mismatch} videos have a label-file count that differs from the probed video frame count by more than 3. "
-            "Onset time for those clips is less exact."
+            f"{mismatch} {'video has' if mismatch == 1 else 'videos have'} a label-file count that differs from the probed video frame count by more than 3. "
+            f"Onset time for {'that clip is' if mismatch == 1 else 'those clips are'} less exact."
         )
     if missing_onset:
         lines.append("")
@@ -506,8 +581,8 @@ def build_report(
     for activity_type in FALL_TYPES:
         group = [row for row in falls if row["activity_type"] == activity_type]
         hits = [row for row in group if row["detected"] == "1"]
-        group_delays = sorted(int(row["delay_ms"]) for row in hits if row.get("delay_ms"))
-        med = str(group_delays[len(group_delays) // 2]) if group_delays else "—"
+        group_delays = [int(row["delay_ms"]) for row in hits if row.get("delay_ms")]
+        med = str(median_ms(group_delays)) if group_delays else "—"
         fall_rows.append([FALL_LABEL[activity_type], pct(len(hits), len(group)), med])
     lines.append(markdown_table(["Fall", "Detected", "Median delay (ms)"], fall_rows))
     lines.append("")
@@ -547,6 +622,26 @@ def build_report(
             "The blocker is whichever single shipped threshold, when relaxed on its own inside the real detector, "
             "turns that video into a detection. Pose measurements under the reason are descriptive; they are not a second detector."
         )
+        steep = brief_flat = 0
+        for row in misses:
+            geom = (geometries or {}).get(row["video_id"]) or {}
+            lowest = geom.get("angle_at_lowest")
+            flat_frames = geom.get("flat_frames")
+            pose_frames = num(row.get("pose_frames"), int) or 0
+            if lowest is not None and lowest > 60:
+                steep += 1
+            if flat_frames is not None and flat_frames <= 2 and pose_frames >= 3:
+                brief_flat += 1
+        if steep or brief_flat:
+            lines.append("")
+            lines.append(
+                f"In {steep} misses the shoulder–hip axis is still steeper than 60° when the torso center "
+                "is lowest in the frame. From an upper corner, a person lying along the camera's line of sight "
+                "keeps that axis steep, so the near-horizontal check never starts. "
+                f"{brief_flat} misses are within 28° of horizontal on two or fewer sampled frames. "
+                "A large raw drop and a flat raw angle on different frames do not satisfy the rule: both have to "
+                "hold on the smoothed pose, after an upright start, and then the 2000 ms stillness hold."
+            )
         lines.append("")
         grouped = defaultdict(list)
         for row in misses:
@@ -561,7 +656,7 @@ def build_report(
             for row in examples:
                 subject_info = (details or {}).get(row["subject"], {})
                 activity_info = subject_info.get("activities", {}).get(row["activity"])
-                reasons = explain(row, activity_info, subject_info)
+                reasons = explain(row, activity_info, subject_info, (geometries or {}).get(row["video_id"]))
                 detail = "; ".join(reasons) if reasons else "no extra pose note"
                 bits.append(f"`{row['video_id']}` ({row['activity']}, {detail})")
             lines.append(f"- **{blocker_title(key)}** ({len(grouped[key])}): " + "; ".join(bits) + ".")
@@ -573,6 +668,14 @@ def build_report(
         "The grid behind the recommendation also crosses minDrop, lie angle, stillness movement, and drop window. "
         "Nothing here is written back into the app."
     )
+    if sweep and max(int(row["adl_false"]) for row in sweep) == 0:
+        lines.append("")
+        lines.append(
+            "Every row in this sweep, including the grid, has 0 ADL false alarms. "
+            "Inside the ranges searched, loosening these four fields did not make walking, hopping, "
+            "picking up, sitting, or kneeling fire, and it still left most falls undetected. "
+            "These tables do not locate the false-alarm boundary of a closer, side-on phone view."
+        )
     lines.append("")
     lines.append("### minDrop")
     lines.append("")
@@ -618,6 +721,13 @@ def build_report(
             f"kneeling {recommended['kneeling_false']}/{recommended['kneeling_total']}). "
             "Confirm on a phone before editing `FallConfig`."
         )
+        missed = int(recommended["falls_total"]) - int(recommended["falls_detected"])
+        if missed * 2 > int(recommended["falls_total"]):
+            lines.append("")
+            lines.append(
+                f"That setting still misses {missed} of {recommended['falls_total']} falls. "
+                "Changing these thresholds does not make the corner-camera set reliable, and `FallConfig` was left as shipped."
+            )
     lines.append("")
     if best_recall and (
         int(best_recall["falls_detected"]) != int(recommended["falls_detected"])
@@ -649,7 +759,8 @@ def build_report(
     )
     lines.append("")
     lines.append(
-        "The camera is a fixed HIKVISION sensor in an upper corner, about 2.15 m high, 1080×960, sometimes in IR "
+        "The camera is a fixed HIKVISION sensor in an upper corner, about 2.15 m high. The paper describes 1080×960 "
+        "at about 23 fps; the version-5 files used here are the sizes and rates above. Some clips are IR "
         "with little visible light, with occlusion and people at different distances. The product camera is a phone "
         "propped on a table or shelf, usually much closer, at 640×480 analysis, with a ViewPort crop. A drop of 0.18 "
         "of the frame is a different physical motion in those two pictures. These counts do not measure on-phone accuracy."
@@ -694,7 +805,13 @@ def main() -> int:
     if not args.skip_samples and manifest_rows:
         samples = pick_samples(videos, {row["video_id"]: row for row in manifest_rows}, args.data, args.samples)
     details = load_dataset_details(args.details)
-    report = build_report(videos, sweep, manifest_rows, samples, details)
+    geometries: dict[str, dict] = {}
+    if args.manifest.is_file():
+        for row in videos:
+            csv_path = args.manifest.parent / f"{row['video_id']}.csv"
+            if csv_path.is_file():
+                geometries[row["video_id"]] = pose_geometry(csv_path)
+    report = build_report(videos, sweep, manifest_rows, samples, details, geometries)
     args.report.write_text(report)
     args.results.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(args.per_video, args.results / "per_video.csv")
