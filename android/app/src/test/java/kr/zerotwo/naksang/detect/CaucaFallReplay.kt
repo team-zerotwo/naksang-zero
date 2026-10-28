@@ -101,7 +101,7 @@ internal object CaucaFallReplay {
         val lines = file.readLines()
         if (lines.isEmpty()) error("empty csv ${file.name}")
         val header = parseCsvLine(lines.first())
-        if (header != landmarkHeader) {
+        if (header.size < landmarkHeader.size || header.subList(0, landmarkHeader.size) != landmarkHeader) {
             error("unexpected header in ${file.name}")
         }
         val frames = ArrayList<ReplayFrame>(lines.size)
@@ -109,8 +109,8 @@ internal object CaucaFallReplay {
             val line = lines[lineIndex]
             if (line.isBlank()) continue
             val cells = parseCsvLine(line)
-            if (cells.size != header.size) {
-                error("${file.name}:${lineIndex + 1} has ${cells.size} columns, expected ${header.size}")
+            if (cells.size < landmarkHeader.size) {
+                error("${file.name}:${lineIndex + 1} has ${cells.size} columns, expected at least ${landmarkHeader.size}")
             }
             val joints = Array(PoseSkeleton.LANDMARK_COUNT) { index ->
                 val base = 3 + index * 3
@@ -263,6 +263,7 @@ internal object CaucaFallReplay {
         val ruleAt: Long?,
         val modelAt: Long?,
         val lyingAt: Long?,
+        val fastAt: Long?,
         val combinedAt: Long?,
         val source: String,
         val sawLying: Boolean,
@@ -278,9 +279,11 @@ internal object CaucaFallReplay {
         val rule = FallDetector(config)
         val model = PoseFallScorer(enabled = config.modelEnabled)
         val lying = LyingStillDetector(config)
+        val fast = FastFlattenDetector()
         var ruleAt: Long? = null
         var modelAt: Long? = null
         var lyingAt: Long? = null
+        var fastAt: Long? = null
         for (frame in frames) {
             val joints = if (frame.poseFound) frame.joints else null
             if (ruleAt == null && joints != null && rule.onJointArray(frame.timestampMs, joints)) {
@@ -292,12 +295,16 @@ internal object CaucaFallReplay {
             if (lyingAt == null && lying.onJointArray(frame.timestampMs, joints)) {
                 lyingAt = frame.timestampMs
             }
+            if (fastAt == null && fast.onJointArray(frame.timestampMs, joints)) {
+                fastAt = frame.timestampMs
+            }
         }
-        val combined = listOfNotNull(ruleAt, modelAt, lyingAt).minOrNull()
+        val combined = listOfNotNull(ruleAt, modelAt, lyingAt, fastAt).minOrNull()
         val source = when {
             combined == null -> ""
             ruleAt != null && ruleAt == combined -> "rule"
             modelAt != null && modelAt == combined -> "model"
+            fastAt != null && fastAt == combined -> "fast"
             else -> "lying"
         }
         return SignalRow(
@@ -311,6 +318,7 @@ internal object CaucaFallReplay {
             ruleAt = ruleAt,
             modelAt = modelAt,
             lyingAt = lyingAt,
+            fastAt = fastAt,
             combinedAt = combined,
             source = source,
             sawLying = lying.sawLying,
@@ -323,7 +331,7 @@ internal object CaucaFallReplay {
         file.bufferedWriter().use { writer ->
             writer.append(
                 "video_id,kind,activity_type,dataset,view,onset_ms,duration_ms," +
-                    "rule_at_ms,model_at_ms,lying_at_ms,combined_at_ms,source,saw_lying,saw_fast_descent,max_still_lying_ms,delay_ms",
+                    "rule_at_ms,model_at_ms,lying_at_ms,fast_at_ms,combined_at_ms,source,saw_lying,saw_fast_descent,max_still_lying_ms,delay_ms",
             )
             writer.append('\n')
             for ((meta, frames) in loaded) {
@@ -348,6 +356,8 @@ internal object CaucaFallReplay {
                 writer.append(row.modelAt?.toString() ?: "")
                 writer.append(',')
                 writer.append(row.lyingAt?.toString() ?: "")
+                writer.append(',')
+                writer.append(row.fastAt?.toString() ?: "")
                 writer.append(',')
                 writer.append(row.combinedAt?.toString() ?: "")
                 writer.append(',')

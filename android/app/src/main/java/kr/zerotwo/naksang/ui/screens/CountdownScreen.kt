@@ -51,6 +51,7 @@ fun CountdownScreen(
     totalMs: Long,
     isTest: Boolean,
     secondsOverride: Int? = null,
+    previewOnly: Boolean = false,
     onOk: () -> Unit,
 ) {
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
@@ -73,7 +74,11 @@ fun CountdownScreen(
         Column(Modifier.statusBarsPadding().padding(start = 24.dp, end = 24.dp, top = 16.dp)) {
             StatusLine(
                 R.drawable.ic_warn,
-                if (isTest) "테스트 · 넘어지신 것 같아요" else "넘어지신 것 같아요",
+                when {
+                    previewOnly -> "미리보기 · 알림은 가지 않아요"
+                    isTest -> "테스트 · 넘어지신 것 같아요"
+                    else -> "넘어지신 것 같아요"
+                },
                 NaksangColors.Warn,
             )
             DisplayText("괜찮으세요?", 44.sp, Modifier.padding(top = 4.dp))
@@ -94,7 +99,7 @@ fun CountdownScreen(
                     textAlign = TextAlign.Center,
                 )
                 Text(
-                    "초 뒤 보호자에게 알려요",
+                    if (previewOnly) "초 · 화면만 재생해요" else "초 뒤 보호자에게 알려요",
                     color = NaksangColors.Warn,
                     fontFamily = Pretendard,
                     fontWeight = FontWeight.Bold,

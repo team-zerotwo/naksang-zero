@@ -20,6 +20,7 @@ enum class Route {
     Sent,
     Settings,
     EditAddress,
+    ModelTest,
 }
 
 enum class FallDelivery { NONE, SENT, PENDING }

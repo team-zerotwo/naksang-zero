@@ -41,6 +41,10 @@ class PoseFallModelTest {
             }
             val score = PoseFallModel.probability(got)
             assertEquals("$name score", sample.get("score").asDouble, score, 1e-4)
+            if (sample.has("gbdt_score")) {
+                val trees = PoseFallModel.gbdtProbability(got)
+                assertEquals("$name gbdt", sample.get("gbdt_score").asDouble, trees, 1e-4)
+            }
         }
     }
 }

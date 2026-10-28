@@ -219,11 +219,16 @@ def main() -> int:
     parser.add_argument("--model", type=Path, default=root / "models" / "pose_landmarker_lite.task")
     parser.add_argument("--limit", type=int, default=0)
     parser.add_argument("--force", action="store_true")
+    parser.add_argument("--shard", default="", help="k/n keeps videos whose index modulo n equals k")
+    parser.add_argument("--skip-manifest", action="store_true")
     args = parser.parse_args()
     unzip_dataset(args.zip, args.data)
     items = discover(args.data)
     if args.limit:
         items = items[: args.limit]
+    if args.shard:
+        part, total = (int(piece) for piece in args.shard.split("/"))
+        items = [item for index, item in enumerate(items) if index % total == part]
     if not items:
         print(f"no GMDCSA videos under {args.data}", file=sys.stderr)
         return 1
@@ -301,6 +306,9 @@ def main() -> int:
             print(f"[{index}/{len(items)}] {video_id} onset_ms={row['onset_ms'] or '-'} view={view}", flush=True)
     finally:
         landmarker.close()
+    if args.skip_manifest:
+        print(f"shard {args.shard} wrote {len(rows)} csvs, failed={failed}")
+        return 1 if failed and not rows else 0
     write_manifest(args.out / "manifest.csv", rows)
     print(f"wrote {args.out / 'manifest.csv'} videos={len(rows)} failed={failed} model={MODEL_SHA256[:12]}")
     return 1 if failed and not rows else 0

@@ -59,6 +59,7 @@ fun SettingsScreen(
     onStop: () -> Unit,
     watching: Boolean,
     onBack: () -> Unit,
+    onOpenModelTest: () -> Unit,
 ) {
     var url by rememberSaveable { mutableStateOf(serverUrl) }
     var demo by rememberSaveable { mutableStateOf(demoOffline) }
@@ -166,6 +167,25 @@ fun SettingsScreen(
                 error = onSave(url, demo, front, frames, cfg)
             }
         }
+        Text(
+            "모델 테스트",
+            color = NaksangColors.Link,
+            fontFamily = Pretendard,
+            fontWeight = FontWeight.Bold,
+            fontSize = 16.sp,
+            modifier = Modifier
+                .padding(top = 8.dp)
+                .heightIn(min = 48.dp)
+                .clickable(onClick = onOpenModelTest)
+                .padding(vertical = 12.dp),
+        )
+        Text(
+            "서버 없이 카메라로 감지 숫자를 봐요. 알림은 시작하지 않아요. 기준은 저장한 값을 써요.",
+            color = NaksangColors.Sub,
+            fontFamily = Pretendard,
+            fontSize = 15.sp,
+            modifier = Modifier.padding(bottom = 8.dp),
+        )
         if (watching) {
             Text(
                 "감지를 잠시 끄기",

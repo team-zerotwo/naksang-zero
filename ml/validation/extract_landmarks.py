@@ -87,6 +87,10 @@ def landmark_header() -> list[str]:
     header = ["timestamp_ms", "source_frame", "pose_found"]
     for index in range(LANDMARKS):
         header.extend([f"l{index:02d}_x", f"l{index:02d}_y", f"l{index:02d}_v"])
+    for index in range(LANDMARKS):
+        header.extend([f"w{index:02d}_x", f"w{index:02d}_y", f"w{index:02d}_z"])
+    for index in range(LANDMARKS):
+        header.append(f"n{index:02d}_z")
     return header
 
 
@@ -238,12 +242,30 @@ def discover_videos(data_root: Path) -> list[Path]:
     return sorted(root.rglob("*.avi"))
 
 
+def _append_world(values: list[str], world) -> None:
+    if world is None or len(world) != LANDMARKS:
+        values.extend(["0"] * (LANDMARKS * 3))
+        return
+    for landmark in world:
+        values.append(f"{float(landmark.x or 0.0):.6f}")
+        values.append(f"{float(landmark.y or 0.0):.6f}")
+        values.append(f"{float(getattr(landmark, 'z', 0.0) or 0.0):.6f}")
+
+
+def _append_image_z(values: list[str], pose) -> None:
+    if pose is None or len(pose) != LANDMARKS:
+        values.extend(["0"] * LANDMARKS)
+        return
+    for landmark in pose:
+        values.append(f"{float(getattr(landmark, 'z', 0.0) or 0.0):.6f}")
+
+
 def blank_row() -> list[str]:
-    return ["0", "0", "0"] + ["0"] * (LANDMARKS * 3)
+    return ["0", "0", "0"] + ["0"] * (LANDMARKS * 7)
 
 
-def landmark_row(timestamp_ms: int, source_frame: int, pose) -> list[str]:
-    if pose is None:
+def landmark_row(timestamp_ms: int, source_frame: int, pose, world=None) -> list[str]:
+    if pose is None or len(pose) != LANDMARKS:
         row = blank_row()
         row[0] = str(timestamp_ms)
         row[1] = str(source_frame)
@@ -254,8 +276,8 @@ def landmark_row(timestamp_ms: int, source_frame: int, pose) -> list[str]:
         values.append(f"{float(landmark.x or 0.0):.6f}")
         values.append(f"{float(landmark.y or 0.0):.6f}")
         values.append(f"{0.0 if visibility is None else float(visibility):.6f}")
-    if len(pose) != LANDMARKS:
-        return [str(timestamp_ms), str(source_frame), "0"] + ["0"] * (LANDMARKS * 3)
+    _append_world(values, world)
+    _append_image_z(values, pose)
     return values
 
 
@@ -357,9 +379,13 @@ def process_video(video: Path, data_root: Path, out_dir: Path, landmarker, force
                     mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
                     result = landmarker.detect(mp_image)
                     pose = result.pose_landmarks[0] if result.pose_landmarks else None
+                    world = result.pose_world_landmarks[0] if result.pose_world_landmarks else None
                     if pose is not None and len(pose) != LANDMARKS:
                         pose = None
-                    writer.writerow(landmark_row(timestamp_ms, source_frame, pose))
+                        world = None
+                    if world is not None and len(world) != LANDMARKS:
+                        world = None
+                    writer.writerow(landmark_row(timestamp_ms, source_frame, pose, world))
             partial.replace(csv_path)
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
@@ -407,10 +433,15 @@ def main() -> int:
     parser.add_argument("--model", type=Path, default=Path(__file__).resolve().parent / "models" / "pose_landmarker_lite.task")
     parser.add_argument("--limit", type=int, default=0, help="Process only the first N videos (0 = all)")
     parser.add_argument("--force", action="store_true")
+    parser.add_argument("--shard", default="", help="k/n keeps videos whose index modulo n equals k")
+    parser.add_argument("--skip-manifest", action="store_true")
     args = parser.parse_args()
     videos = discover_videos(args.data)
     if args.limit:
         videos = videos[: args.limit]
+    if args.shard:
+        part, total = (int(piece) for piece in args.shard.split("/"))
+        videos = [video for index, video in enumerate(videos) if index % total == part]
     if not videos:
         print(f"no .avi files under {args.data}", file=sys.stderr)
         return 1
@@ -436,6 +467,9 @@ def main() -> int:
             )
     finally:
         landmarker.close()
+    if args.skip_manifest:
+        print(f"shard {args.shard} wrote {len(rows)} csvs, failed={failed}")
+        return 1 if failed and not rows else 0
     write_manifest(args.out / "manifest.csv", rows)
     meta = {
         "model": "pose_landmarker_lite.task",

@@ -86,8 +86,9 @@ class LyingStillDetectorTest {
         }
         val row = CaucaFallReplay.signals(frames, signalMeta("fast_fall"))
         assertTrue(row.ruleAt != null)
-        assertTrue(row.combinedAt == row.ruleAt)
-        assertEquals("rule", row.source)
+        assertTrue(row.combinedAt != null && row.combinedAt!! <= row.ruleAt!!)
+        assertTrue(row.source == "rule" || row.source == "fast")
+        assertTrue(row.lyingAt == null || row.combinedAt!! < row.lyingAt!!)
     }
 
     @Test

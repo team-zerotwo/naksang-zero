@@ -22,24 +22,30 @@ ml/validation/.venv/bin/python ml/validation/extract_gmdcsa.py
 ml/validation/.venv/bin/python ml/validation/extract_urfall.py
 ```
 
-UR ceiling clips are scored and are not used as training rows. Image y is not gravity on that camera.
+UR Fall is scored when the landmark CSVs are present and is never a training row. Image y is not gravity on the ceiling camera. Do not commit the UR files.
 
 ## Fit
 
 ```bash
-ml/validation/.venv/bin/python ml/train/train_pose_model.py
+ml/validation/.venv/bin/python ml/train/export_shipped.py
 ```
 
-This writes:
+`ml/train/train_pose_model.py` calls the same exporter. This writes:
 
-- `ml/models/pose_fall_model.json`
-- `android/app/src/main/java/kr/zerotwo/naksang/detect/PoseFallWeights.kt`
+- `ml/models/pose_fall_model.json` (logistic weights and both thresholds)
+- `android/app/src/main/java/kr/zerotwo/naksang/detect/PoseFallWeights.kt` (logistic weights and the gradient-boosted trees)
 - `android/app/src/test/resources/pose_fall_reference.json`
-- `ml/validation/results/model_lodo.md`
 
-The script trains logistic regression and a 12-unit MLP, keeps the one with more leave-one-dataset-out falls at zero held-out ADL false alarms, then refits that kind on every available dataset. The shipped threshold is chosen on those same clips, so it is in-distribution. The leave-one-dataset-out table is the generalization number.
+Training rows are CAUCAFall and GMDCSA-24 only. The logistic threshold and the tree threshold are each the highest value with zero ADL false alarms on those clips, after the most falls. UR Fall is not used to pick them. `PoseFallModelTest` checks that Kotlin reproduces both Python scores on the reference windows.
 
-`PoseFallModelTest` checks that Kotlin reproduces the Python score on the reference windows.
+The phone also runs a fast-flat rule (`FastFlattenDetector`): the torso angle falls from at least 58° to at most 20° inside 1600 ms, with a peak flattening speed of 140°/s, then stays at or below 30° for 2000 ms. That gate was the zero-false-alarm choice on the same two commercial sets. It does not change the 9 second lying-still default or the 30 second countdown. The trees are plain numbers evaluated in Kotlin. There is no TensorFlow Lite runtime; fifty depth-2 trees are cheap at 5 fps.
+
+Honest scores, including the runs that were not shipped, are in `ml/validation/EXPERIMENTS.md`.
+
+```bash
+ml/validation/.venv/bin/python ml/train/experiment.py --kind logreg --features v6 --rule-root ml/validation/out
+ml/validation/.venv/bin/python ml/train/ensemble.py
+```
 
 ## Phone
 

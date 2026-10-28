@@ -201,10 +201,32 @@ class FallDetector(config: FallConfig = FallConfig()) {
     private var standingLen = 0f
     private var lastTimestamp: Long? = null
     private var armed = true
+    private var ruleDebugState = RulePathDebug(stillNeedMs = config.stillDurationMs)
 
     @Synchronized
     fun updateConfig(newConfig: FallConfig) {
         config = newConfig
+    }
+
+    /** Latest rule-path numbers. Does not change detection. */
+    @Synchronized
+    fun ruleDebug(): RulePathDebug = ruleDebugState
+
+    /**
+     * A frame with no pose. Matches production, which does not call
+     * [onJointArray] in that case, and clears the one-frame fire flags
+     * without touching the rule state.
+     */
+    @Synchronized
+    fun noteAbsent() {
+        ruleDebugState = ruleDebugState.copy(
+            measured = false,
+            angleDeg = null,
+            hipY = null,
+            kneeY = null,
+            ruleFired = false,
+            viewFired = false,
+        )
     }
 
     @Synchronized
@@ -219,6 +241,7 @@ class FallDetector(config: FallConfig = FallConfig()) {
         standingLen = 0f
         lastTimestamp = null
         armed = true
+        ruleDebugState = RulePathDebug(stillNeedMs = config.stillDurationMs)
         for (i in tracked.indices) tracked[i] = null
     }
 
@@ -233,7 +256,8 @@ class FallDetector(config: FallConfig = FallConfig()) {
     @Synchronized
     fun onLandmarks(timestampMs: Long, landmarks: List<JointPoint>): Boolean {
         val cfg = config
-        val sample = measure(timestampMs, landmarks, cfg) ?: return false
+        val sample = measure(timestampMs, landmarks, cfg)
+        if (sample == null) return publish(fired = false, sample = null, firedSteep = false, elapsedOverride = null)
         val previousTime = lastTimestamp
         lastTimestamp = sample.t
 
@@ -249,7 +273,7 @@ class FallDetector(config: FallConfig = FallConfig()) {
                 armed = true
                 clearLie()
             }
-            return false
+            return publish(fired = false, sample = sample, firedSteep = false, elapsedOverride = null)
         }
 
         val gap = previousTime?.let { sample.t - it }
@@ -264,12 +288,14 @@ class FallDetector(config: FallConfig = FallConfig()) {
         if (lying == null) {
             val flatLatch = flatLatch(sample, cfg)
             val steepLatch = steepLatch(sample, cfg)
-            if (flatLatch == null && steepLatch == null) return false
+            if (flatLatch == null && steepLatch == null) {
+                return publish(fired = false, sample = sample, firedSteep = false, elapsedOverride = null)
+            }
             // A flat landing uses the lie-angle hold. The steep path is only for a
             // torso that never looks horizontal.
             val useSteep = flatLatch == null && steepLatch != null
             val chosen = if (useSteep) steepLatch else flatLatch
-            if (chosen == null) return false
+            if (chosen == null) return publish(fired = false, sample = sample, firedSteep = false, elapsedOverride = null)
             lieSince = sample.t
             lieRef = chosen.ref
             lieFlat = !useSteep && chosen.flat
@@ -277,7 +303,7 @@ class FallDetector(config: FallConfig = FallConfig()) {
             lieDrop = chosen.drop
             anchorX = sample.cx
             anchorY = sample.cy
-            return false
+            return publish(fired = false, sample = sample, firedSteep = false, elapsedOverride = null)
         }
 
         if (lieSteep) {
@@ -294,7 +320,7 @@ class FallDetector(config: FallConfig = FallConfig()) {
 
         if (!stillDown(sample, cfg)) {
             clearLie()
-            return false
+            return publish(fired = false, sample = sample, firedSteep = false, elapsedOverride = null)
         }
 
         val moved = hypot((sample.cx - anchorX).toDouble(), (sample.cy - anchorY).toDouble()).toFloat()
@@ -303,16 +329,41 @@ class FallDetector(config: FallConfig = FallConfig()) {
             lieSince = sample.t
             anchorX = sample.cx
             anchorY = sample.cy
-            return false
+            return publish(fired = false, sample = sample, firedSteep = false, elapsedOverride = null)
         }
 
         if (sample.t - lying >= cfg.stillDurationMs) {
+            val steep = lieSteep
+            val elapsed = sample.t - lying
             if (lieSteep) floorCy = sample.cy
             armed = false
             clearLie()
-            return true
+            return publish(fired = true, sample = sample, firedSteep = steep, elapsedOverride = elapsed)
         }
-        return false
+        return publish(fired = false, sample = sample, firedSteep = false, elapsedOverride = null)
+    }
+
+    /** Records the read-only snapshot. The boolean is the detection result. */
+    private fun publish(fired: Boolean, sample: Sample?, firedSteep: Boolean, elapsedOverride: Long?): Boolean {
+        val since = lieSince
+        val elapsed = when {
+            elapsedOverride != null -> elapsedOverride
+            sample != null && since != null -> (sample.t - since).coerceAtLeast(0L)
+            else -> 0L
+        }
+        ruleDebugState = RulePathDebug(
+            measured = sample != null,
+            angleDeg = sample?.angleDeg,
+            hipY = sample?.hipY,
+            kneeY = sample?.kneeY,
+            ruleLatched = since != null && !lieSteep,
+            viewLatched = since != null && lieSteep,
+            stillElapsedMs = elapsed,
+            stillNeedMs = config.stillDurationMs,
+            ruleFired = fired && !firedSteep,
+            viewFired = fired && firedSteep,
+        )
+        return fired
     }
 
     private data class Latch(val ref: Sample, val drop: Float, val flat: Boolean)
