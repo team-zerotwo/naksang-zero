@@ -116,11 +116,15 @@ def _scale_y(frames, factor: float):
     return out
 
 
-def training_matrix(clips):
+def training_matrix(clips, skip_ceiling: bool = True, skip_datasets=("urfall",)):
+    """Default skips match the v8 commercial-only fit. Pass skip_datasets=() to keep UR."""
     xs = []
     ys = []
+    skipped = set(skip_datasets)
     for clip in clips:
-        if clip.get("ceiling") or clip.get("dataset") == "urfall":
+        if skip_ceiling and clip.get("ceiling"):
+            continue
+        if clip.get("dataset") in skipped:
             continue
         positives = []
         negatives = []
@@ -170,8 +174,8 @@ def training_matrix(clips):
     return np.asarray(xs, dtype=np.float64), np.asarray(ys, dtype=np.float64)
 
 
-def fit_kind(kind: str, clips, seed: int):
-    x, y = training_matrix(clips)
+def fit_kind(kind: str, clips, seed: int, **train_kwargs):
+    x, y = training_matrix(clips, **train_kwargs)
     if kind == "mlp":
         return fit_mlp(x, y, seed=seed)
     if kind == "logreg":
