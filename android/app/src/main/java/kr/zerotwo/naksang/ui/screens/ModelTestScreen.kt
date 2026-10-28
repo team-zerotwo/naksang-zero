@@ -1,7 +1,11 @@
 package kr.zerotwo.naksang.ui.screens
 
 import android.app.Activity
+import android.graphics.Outline
+import android.graphics.Rect
 import android.view.View
+import android.view.ViewGroup
+import android.view.ViewOutlineProvider
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -36,6 +40,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
@@ -45,6 +50,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.view.WindowCompat
 import kr.zerotwo.naksang.R
+import kr.zerotwo.naksang.camera.PhoneOrientation
 import kr.zerotwo.naksang.detect.DetectSignal
 import kr.zerotwo.naksang.detect.FallDebugSnapshot
 import kr.zerotwo.naksang.detect.formatEventClock
@@ -120,6 +126,8 @@ fun ModelTestScreen(
         Column(
             Modifier
                 .weight(1f)
+                .fillMaxWidth()
+                .background(NaksangColors.Bg)
                 .verticalScroll(rememberScrollState())
                 .navigationBarsPadding()
                 .padding(horizontal = 24.dp, vertical = 16.dp),
@@ -134,7 +142,14 @@ fun ModelTestScreen(
                 color = NaksangColors.Sub,
                 fontFamily = Pretendard,
                 fontSize = 15.sp,
-                modifier = Modifier.padding(top = 8.dp, bottom = 12.dp),
+                modifier = Modifier.padding(top = 8.dp, bottom = 4.dp),
+            )
+            Text(
+                "폰 방향: ${PhoneOrientation.label(ui.phoneOrientation)}",
+                color = NaksangColors.Sub,
+                fontFamily = Pretendard,
+                fontSize = 15.sp,
+                modifier = Modifier.padding(bottom = 12.dp),
             )
             val firedNow = ui.snapshot.wouldFire.isNotEmpty()
             StatusLine(
@@ -369,6 +384,7 @@ private fun TestPreview(
         Modifier
             .fillMaxWidth()
             .height(260.dp)
+            .clipToBounds()
             .background(NaksangColors.Text),
     ) {
         if (ui.replayRunning) {
@@ -379,11 +395,18 @@ private fun TestPreview(
                 PreviewView(context).apply {
                     implementationMode = PreviewView.ImplementationMode.COMPATIBLE
                     scaleType = PreviewView.ScaleType.FILL_CENTER
+                    keepPreviewInsideBounds()
                 }
             }
             androidx.compose.ui.viewinterop.AndroidView(
                 factory = { previewView },
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier.fillMaxSize().clipToBounds(),
+                update = { view ->
+                    (view.parent as? ViewGroup)?.apply {
+                        clipChildren = true
+                        clipToPadding = true
+                    }
+                },
             )
             DisposableEffect(previewView) {
                 val push = {
@@ -494,6 +517,41 @@ private fun ScoreBar(score: Double, threshold: Double) {
             contentAlignment = Alignment.CenterEnd,
         ) {
             Box(Modifier.width(2.dp).height(10.dp).background(NaksangColors.Text))
+        }
+    }
+}
+
+/**
+ * FILL_CENTER scales the camera image past the view and crops it. On some
+ * phones the texture ignores the parent clip and paints over the text under
+ * the 260dp box. An outline clip keeps the texture, the skeleton, and the
+ * top bar inside that box.
+ */
+private fun PreviewView.keepPreviewInsideBounds() {
+    clipChildren = true
+    clipToPadding = true
+    setBackgroundColor(android.graphics.Color.BLACK)
+    outlineProvider = object : ViewOutlineProvider() {
+        override fun getOutline(view: View, outline: Outline) {
+            outline.setRect(0, 0, view.width, view.height)
+        }
+    }
+    clipToOutline = true
+    addOnLayoutChangeListener { view, _, _, _, _, _, _, _, _ ->
+        view.clipBounds = Rect(0, 0, view.width, view.height)
+        view.clipToOutline = true
+        view.invalidateOutline()
+        val group = view as? ViewGroup ?: return@addOnLayoutChangeListener
+        for (index in 0 until group.childCount) {
+            val child = group.getChildAt(index)
+            child.clipBounds = Rect(0, 0, view.width, view.height)
+            child.outlineProvider = object : ViewOutlineProvider() {
+                override fun getOutline(childView: View, outline: Outline) {
+                    outline.setRect(0, 0, childView.width, childView.height)
+                }
+            }
+            child.clipToOutline = true
+            child.invalidateOutline()
         }
     }
 }

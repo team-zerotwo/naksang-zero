@@ -22,6 +22,22 @@ import androidx.lifecycle.LifecycleRegistry
 import java.util.concurrent.Executors
 
 /**
+ * One in-memory analysis frame. [compensationDegrees] is the extra clockwise
+ * turn applied so a sideways phone still shows an upright person to the pose
+ * model. It is 0 when the phone is upright, and the bitmap is then the same
+ * one the portrait preview is showing. [previewWidth] and [previewHeight] are
+ * the size before that extra turn (90° and 270° swap the bitmap).
+ */
+data class CameraAnalysisFrame(
+    val bitmap: Bitmap,
+    val timestampMs: Long,
+    val compensationDegrees: Int,
+    val previewWidth: Int,
+    val previewHeight: Int,
+    val compensationGeneration: Int,
+)
+
+/**
  * Analysis runs around [ANALYSIS_WIDTH]×[ANALYSIS_HEIGHT] and a few frames per second.
  * Frames are decoded in memory, handed to the pose reader, and recycled. Nothing
  * is written to disk or sent.
@@ -30,6 +46,9 @@ import java.util.concurrent.Executors
  * When a [ViewPort] is supplied it is kept after the preview leaves, so the
  * watching crop matches the framing the user just saw. The lifecycle is owned
  * here so detection continues after the activity pauses.
+ *
+ * Video replay does not come through here, so device orientation never rotates
+ * those frames.
  */
 class FallCameraEngine(private val context: Context) : LifecycleOwner {
     private val registry = LifecycleRegistry(this)
@@ -41,11 +60,21 @@ class FallCameraEngine(private val context: Context) : LifecycleOwner {
     private var surfaceProvider: Preview.SurfaceProvider? = null
     private var viewPort: ViewPort? = null
     private var started = false
-    private var front = true
+    @Volatile private var front = true
     private var lastFrameAt = 0L
 
+    /**
+     * Snapped physical orientation, 0/90/180/270. Written on the main thread.
+     * Read on the analyzer thread together with [compensationGeneration]:
+     * the generation is published second, and read first, so a frame never
+     * pairs a new generation with the previous quadrant.
+     */
+    @Volatile var deviceQuadrant: Int = 0
+
+    @Volatile var compensationGeneration: Int = 0
+
     var fpsProvider: () -> Int = { 5 }
-    var onFrame: ((Bitmap, Long) -> Unit)? = null
+    var onFrame: ((CameraAnalysisFrame) -> Unit)? = null
     var onError: ((String) -> Unit)? = null
 
     fun setLens(frontCamera: Boolean) {
@@ -145,9 +174,22 @@ class FallCameraEngine(private val context: Context) : LifecycleOwner {
             val now = SystemClock.elapsedRealtime()
             if (now - lastFrameAt < interval) return
             lastFrameAt = now
-            val bitmap = image.toUprightBitmap() ?: return
+            val oriented = image.toUprightBitmap() ?: return
             val listener = onFrame
-            if (listener == null) bitmap.recycle() else listener(bitmap, now)
+            if (listener == null) {
+                oriented.bitmap.recycle()
+            } else {
+                listener(
+                    CameraAnalysisFrame(
+                        bitmap = oriented.bitmap,
+                        timestampMs = now,
+                        compensationDegrees = oriented.compensationDegrees,
+                        previewWidth = oriented.previewWidth,
+                        previewHeight = oriented.previewHeight,
+                        compensationGeneration = oriented.compensationGeneration,
+                    ),
+                )
+            }
         } catch (e: Exception) {
             Log.e(TAG, "analyze", e)
         } finally {
@@ -155,18 +197,45 @@ class FallCameraEngine(private val context: Context) : LifecycleOwner {
         }
     }
 
-    private fun ImageProxy.toUprightBitmap(): Bitmap? {
+    private fun ImageProxy.toUprightBitmap(): OrientedBitmap? {
         val src = rgbaToBitmap() ?: return null
         // cropRect is in the unrotated buffer. Crop before rotating so the
-        // upright bitmap matches the shared ViewPort (FILL_CENTER with the preview).
+        // display bitmap matches the shared ViewPort (FILL_CENTER with the preview).
         val cropped = applyCrop(src, cropRect)
-        val rotation = imageInfo.rotationDegrees
-        if (rotation == 0) return cropped
+        val displayed = rotateBitmap(cropped, imageInfo.rotationDegrees)
+        val previewWidth = displayed.width
+        val previewHeight = displayed.height
+        // Read generation before the quadrant. The main thread writes the
+        // quadrant first and the generation second.
+        val generation = compensationGeneration
+        val quadrant = deviceQuadrant
+        val compensation = analysisCompensationDegrees(quadrant, front)
+        val upright = rotateBitmap(displayed, compensation)
+        return OrientedBitmap(
+            bitmap = upright,
+            compensationDegrees = compensation,
+            previewWidth = previewWidth,
+            previewHeight = previewHeight,
+            compensationGeneration = generation,
+        )
+    }
+
+    private fun rotateBitmap(src: Bitmap, degrees: Int): Bitmap {
+        val rotation = degrees.mod(360)
+        if (rotation == 0) return src
         val matrix = Matrix().apply { postRotate(rotation.toFloat()) }
-        val rotated = Bitmap.createBitmap(cropped, 0, 0, cropped.width, cropped.height, matrix, true)
-        if (rotated != cropped) cropped.recycle()
+        val rotated = Bitmap.createBitmap(src, 0, 0, src.width, src.height, matrix, true)
+        if (rotated != src) src.recycle()
         return rotated
     }
+
+    private class OrientedBitmap(
+        val bitmap: Bitmap,
+        val compensationDegrees: Int,
+        val previewWidth: Int,
+        val previewHeight: Int,
+        val compensationGeneration: Int,
+    )
 
     private fun applyCrop(src: Bitmap, crop: Rect): Bitmap {
         if (src.width <= 1 || src.height <= 1 || crop.width() <= 1 || crop.height() <= 1) return src

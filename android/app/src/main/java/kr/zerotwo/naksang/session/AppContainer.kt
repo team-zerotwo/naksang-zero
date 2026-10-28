@@ -27,9 +27,11 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kr.zerotwo.naksang.BuildConfig
 import kr.zerotwo.naksang.MainActivity
+import kr.zerotwo.naksang.camera.DeviceOrientationMonitor
 import kr.zerotwo.naksang.camera.FallCameraEngine
 import kr.zerotwo.naksang.camera.PoseReader
 import kr.zerotwo.naksang.camera.VideoFrameDecoder
+import kr.zerotwo.naksang.camera.analysisCompensationDegrees
 import kr.zerotwo.naksang.data.AddressBody
 import kr.zerotwo.naksang.data.ApiFactory
 import kr.zerotwo.naksang.data.ApiResult
@@ -43,6 +45,7 @@ import kr.zerotwo.naksang.detect.FallAnalysis
 import kr.zerotwo.naksang.detect.FallConfig
 import kr.zerotwo.naksang.detect.FallDebugSnapshot
 import kr.zerotwo.naksang.detect.FrameRate
+import kr.zerotwo.naksang.detect.JointPoint
 import kr.zerotwo.naksang.detect.SignalCounts
 import kr.zerotwo.naksang.detect.WouldTriggerLog
 import kr.zerotwo.naksang.detect.formatEventClock
@@ -50,6 +53,7 @@ import kr.zerotwo.naksang.detect.formatWouldTriggerCsv
 import kr.zerotwo.naksang.detect.liveTriggerLine
 import kr.zerotwo.naksang.detect.toJointPoints
 import kr.zerotwo.naksang.detect.torsoCenter
+import kr.zerotwo.naksang.detect.unrotateForPreview
 import kr.zerotwo.naksang.detect.wouldTriggerEvents
 import kr.zerotwo.naksang.service.FallDetectionService
 import kr.zerotwo.naksang.util.IsoTime
@@ -86,6 +90,15 @@ class AppContainer(private val app: Context) {
     private var heartbeatJob: Job? = null
     private var countdownJob: Job? = null
     private var service: FallDetectionService? = null
+    private var deviceQuadrant: Int = 0
+    private var compensationGeneration: Int = 0
+    private val orientationMonitor = DeviceOrientationMonitor(app) { quadrant ->
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            onDeviceQuadrant(quadrant)
+        } else {
+            mainHandler.post { onDeviceQuadrant(quadrant) }
+        }
+    }
     private var serviceRunning = false
     private val persistMutex = Mutex()
 
@@ -94,9 +107,8 @@ class AppContainer(private val app: Context) {
         camera.onError = { message ->
             mainHandler.post { _state.update { it.copy(cameraError = message) } }
         }
-        camera.onFrame = { bitmap, timestamp ->
-            val frameWidth = bitmap.width
-            val frameHeight = bitmap.height
+        camera.onFrame = { frame ->
+            val bitmap = frame.bitmap
             val packet = try {
                 synchronized(poseLock) {
                     if (replayBusy.get()) {
@@ -110,7 +122,20 @@ class AppContainer(private val app: Context) {
             }
             if (packet != null) {
                 val (joints, modelFailed) = packet
+                val compensation = frame.compensationDegrees
+                val drawJoints = if (joints != null && compensation != 0) {
+                    joints.unrotateForPreview(compensation)
+                } else {
+                    joints
+                }
+                val generation = frame.compensationGeneration
+                val previewWidth = frame.previewWidth
+                val previewHeight = frame.previewHeight
+                val timestamp = frame.timestampMs
                 mainHandler.post {
+                    // A turn that happened while this frame was in flight.
+                    // Drop it so the old picture is not read as a fall.
+                    if (generation != compensationGeneration) return@post
                     if (modelFailed) {
                         _state.update { it.copy(cameraError = "포즈 모델을 열지 못했어요") }
                     }
@@ -119,8 +144,9 @@ class AppContainer(private val app: Context) {
                             onTestFrame(
                                 timestampMs = timestamp,
                                 joints = joints,
-                                frameWidth = frameWidth,
-                                frameHeight = frameHeight,
+                                landmarks = drawJoints?.toJointPoints().orEmpty(),
+                                frameWidth = previewWidth,
+                                frameHeight = previewHeight,
                                 videoOffsetMs = null,
                                 replayIndex = 0,
                                 replayTotal = 0,
@@ -128,11 +154,12 @@ class AppContainer(private val app: Context) {
                             )
                         }
                     } else {
-                        onPose(timestamp, joints, frameWidth, frameHeight)
+                        onPose(timestamp, joints, drawJoints, previewWidth, previewHeight)
                     }
                 }
             }
         }
+        orientationMonitor.start()
         scope.launch {
             val loaded = store.load()
             serverBase = loaded.serverUrl
@@ -306,7 +333,8 @@ class AppContainer(private val app: Context) {
         serverBase = url
         analysis.updateConfig(config)
         testAnalysis.updateConfig(config)
-        val lensChanged = front != _state.value.cameraFacingFront
+        val previousFacing = _state.value.cameraFacingFront
+        val lensChanged = front != previousFacing
         _state.update {
             it.copy(
                 serverUrl = url,
@@ -317,7 +345,16 @@ class AppContainer(private val app: Context) {
                 errorMessage = null,
             )
         }
-        if (lensChanged) camera.setLens(front)
+        if (lensChanged) {
+            camera.setLens(front)
+            val before = analysisCompensationDegrees(deviceQuadrant, previousFacing)
+            val after = analysisCompensationDegrees(deviceQuadrant, front)
+            if (before != after) {
+                compensationGeneration += 1
+                camera.compensationGeneration = compensationGeneration
+                resetDetectorsForRotation(includeTest = !replayBusy.get())
+            }
+        }
         persist()
         return null
     }
@@ -418,13 +455,17 @@ class AppContainer(private val app: Context) {
     private fun onPose(
         timestampMs: Long,
         joints: Array<FloatArray>?,
+        drawJoints: Array<FloatArray>?,
         frameWidth: Int,
         frameHeight: Int,
     ) {
         val current = _state.value
-        val center = joints?.let { torsoCenter(it, current.fallConfig.minVisibility) }
+        // Drawing uses the portrait preview. Detection uses the upright joints.
+        // They are the same array when the phone is upright.
+        val shown = drawJoints ?: joints
+        val center = shown?.let { torsoCenter(it, current.fallConfig.minVisibility) }
         if (current.route == Route.Camera) {
-            if (joints == null || center == null) {
+            if (shown == null || center == null) {
                 if (current.personVisible || current.poseLandmarks.isNotEmpty()) {
                     _state.update { it.copy(personVisible = false, poseLandmarks = emptyList()) }
                 }
@@ -434,7 +475,7 @@ class AppContainer(private val app: Context) {
                         personVisible = true,
                         personX = center.first,
                         personY = center.second,
-                        poseLandmarks = joints.toJointPoints(),
+                        poseLandmarks = shown.toJointPoints(),
                         poseFrameWidth = frameWidth,
                         poseFrameHeight = frameHeight,
                     )
@@ -449,8 +490,27 @@ class AppContainer(private val app: Context) {
         }
     }
 
+    private fun onDeviceQuadrant(quadrant: Int) {
+        if (quadrant == deviceQuadrant) return
+        deviceQuadrant = quadrant
+        // Quadrant first, generation second. The analyzer reads them in reverse.
+        camera.deviceQuadrant = quadrant
+        compensationGeneration += 1
+        camera.compensationGeneration = compensationGeneration
+        resetDetectorsForRotation(includeTest = !replayBusy.get())
+        _modelTest.update { it.copy(phoneOrientation = quadrant) }
+    }
+
     private fun resetDetectors() {
         analysis.reset()
+    }
+
+    /** Clears history so a phone turn is not scored as a fall. Replay is left alone. */
+    private fun resetDetectorsForRotation(includeTest: Boolean) {
+        analysis.reset()
+        if (includeTest) {
+            synchronized(testLock) { testAnalysis.reset() }
+        }
     }
 
     private fun beginCountdown(isTest: Boolean) {
@@ -676,6 +736,7 @@ class AppContainer(private val app: Context) {
             snapshot = FallDebugSnapshot.initial(current.fallConfig),
             events = testLog.snapshot(),
             counts = testLog.counts(),
+            phoneOrientation = deviceQuadrant,
         )
         _state.update { it.copy(route = Route.ModelTest, cameraError = null, errorMessage = null) }
         camera.setLens(current.cameraFacingFront)
@@ -735,6 +796,7 @@ class AppContainer(private val app: Context) {
                     onTestFrame(
                         timestampMs = frame.timestampMs,
                         joints = joints,
+                        landmarks = joints?.toJointPoints().orEmpty(),
                         frameWidth = width,
                         frameHeight = height,
                         videoOffsetMs = frame.timestampMs,
@@ -778,6 +840,7 @@ class AppContainer(private val app: Context) {
     private fun onTestFrame(
         timestampMs: Long,
         joints: Array<FloatArray>?,
+        landmarks: List<JointPoint>,
         frameWidth: Int,
         frameHeight: Int,
         videoOffsetMs: Long?,
@@ -800,7 +863,7 @@ class AppContainer(private val app: Context) {
             }
             previous.copy(
                 snapshot = frame.debug,
-                landmarks = joints?.toJointPoints().orEmpty(),
+                landmarks = landmarks,
                 frameWidth = frameWidth,
                 frameHeight = frameHeight,
                 fps = fps,

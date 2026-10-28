@@ -20,4 +20,6 @@ data class ModelTestUi(
     val replayError: String? = null,
     val liveLine: String = "이번 프레임에는 발화할 조건이 없어요",
     val lastFireLine: String? = null,
+    /** Snapped phone quadrant: 0, 90, 180, or 270. */
+    val phoneOrientation: Int = 0,
 )
