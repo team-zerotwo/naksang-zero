@@ -22,4 +22,10 @@ data class ModelTestUi(
     val lastFireLine: String? = null,
     /** Snapped phone quadrant: 0, 90, 180, or 270. */
     val phoneOrientation: Int = 0,
+    /** Which back lens or zoom the camera settled on. */
+    val lensLabel: String = "렌즈 확인 중",
+    /** Local 30s clock on this screen. Null when it is not running. Nothing is sent. */
+    val alertCountdownMs: Long? = null,
+    /** Set when that clock finishes. Stays until the log is cleared. */
+    val alertStageLine: String? = null,
 )

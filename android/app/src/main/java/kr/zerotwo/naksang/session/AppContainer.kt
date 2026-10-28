@@ -14,10 +14,12 @@ import androidx.camera.core.Preview
 import androidx.camera.core.ViewPort
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
@@ -41,6 +43,7 @@ import kr.zerotwo.naksang.data.NaksangRepository
 import kr.zerotwo.naksang.data.Outcomes
 import kr.zerotwo.naksang.data.PendingFall
 import kr.zerotwo.naksang.data.SessionStore
+import kr.zerotwo.naksang.detect.ALERT_STAGE_NOTE
 import kr.zerotwo.naksang.detect.FallAnalysis
 import kr.zerotwo.naksang.detect.FallConfig
 import kr.zerotwo.naksang.detect.FallDebugSnapshot
@@ -54,6 +57,7 @@ import kr.zerotwo.naksang.detect.liveTriggerLine
 import kr.zerotwo.naksang.detect.toJointPoints
 import kr.zerotwo.naksang.detect.torsoCenter
 import kr.zerotwo.naksang.detect.unrotateForPreview
+import kr.zerotwo.naksang.detect.alertStageEvent
 import kr.zerotwo.naksang.detect.wouldTriggerEvents
 import kr.zerotwo.naksang.service.FallDetectionService
 import kr.zerotwo.naksang.util.IsoTime
@@ -61,6 +65,7 @@ import kr.zerotwo.naksang.util.ServerUrl
 import kr.zerotwo.naksang.util.shareCacheFile
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicReference
 
 class AppContainer(private val app: Context) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -89,6 +94,9 @@ class AppContainer(private val app: Context) {
 
     private var heartbeatJob: Job? = null
     private var countdownJob: Job? = null
+    private val testAlertJob = AtomicReference<Job?>(null)
+    private val testAlertArmed = AtomicBoolean(false)
+    private val testAlertGeneration = AtomicInteger(0)
     private var service: FallDetectionService? = null
     private var deviceQuadrant: Int = 0
     private var compensationGeneration: Int = 0
@@ -106,6 +114,9 @@ class AppContainer(private val app: Context) {
         camera.fpsProvider = { _state.value.analysisFps }
         camera.onError = { message ->
             mainHandler.post { _state.update { it.copy(cameraError = message) } }
+        }
+        camera.onLensLabel = { label ->
+            mainHandler.post { _modelTest.update { it.copy(lensLabel = label) } }
         }
         camera.onFrame = { frame ->
             val bitmap = frame.bitmap
@@ -732,11 +743,13 @@ class AppContainer(private val app: Context) {
             testAnalysis.reset()
             testFps.reset()
         }
+        cancelTestAlert()
         _modelTest.value = ModelTestUi(
             snapshot = FallDebugSnapshot.initial(current.fallConfig),
             events = testLog.snapshot(),
             counts = testLog.counts(),
             phoneOrientation = deviceQuadrant,
+            lensLabel = camera.lensLabel,
         )
         _state.update { it.copy(route = Route.ModelTest, cameraError = null, errorMessage = null) }
         camera.setLens(current.cameraFacingFront)
@@ -745,13 +758,23 @@ class AppContainer(private val app: Context) {
 
     fun closeModelTest() {
         stopReplay()
+        cancelTestAlert()
         _state.update { it.copy(route = Route.Settings, personVisible = false, poseLandmarks = emptyList()) }
         if (!cameraKeptAlive()) camera.stop()
     }
 
     fun clearModelTestLog() {
+        cancelTestAlert()
         testLog.clear()
-        _modelTest.update { it.copy(events = emptyList(), counts = SignalCounts(), lastFireLine = null) }
+        _modelTest.update {
+            it.copy(
+                events = emptyList(),
+                counts = SignalCounts(),
+                lastFireLine = null,
+                alertCountdownMs = null,
+                alertStageLine = null,
+            )
+        }
     }
 
     fun shareModelTestLog(context: Context) {
@@ -849,34 +872,98 @@ class AppContainer(private val app: Context) {
         fromReplay: Boolean,
     ) {
         val now = System.currentTimeMillis()
-        val next = synchronized(testLock) {
-            val frame = testAnalysis.onFrame(timestampMs, joints)
-            val events = wouldTriggerEvents(now, videoOffsetMs, frame.debug)
-            if (events.isNotEmpty()) testLog.addAll(events)
-            val previous = _modelTest.value
-            val fps = if (fromReplay) previous.fps else testFps.mark(timestampMs)
-            val lastFire = if (events.isEmpty()) {
-                previous.lastFireLine
-            } else {
-                val names = events.joinToString(" · ") { it.signal.korean() }
-                "최근 발화 · $names · ${formatEventClock(events.first())}"
+        var firedNow = false
+        val frame = synchronized(testLock) {
+            val analyzed = testAnalysis.onFrame(timestampMs, joints)
+            val events = wouldTriggerEvents(now, videoOffsetMs, analyzed.debug)
+            if (events.isNotEmpty()) {
+                testLog.addAll(events)
+                firedNow = true
             }
-            previous.copy(
-                snapshot = frame.debug,
+            val names = if (events.isEmpty()) null else events.joinToString(" · ") { it.signal.korean() }
+            val clock = events.firstOrNull()?.let { formatEventClock(it) }
+            analyzed to (names to clock)
+        }
+        val (analyzed, fire) = frame
+        val (fireNames, fireClock) = fire
+        val measuredFps = if (fromReplay) null else synchronized(testLock) { testFps.mark(timestampMs) }
+        _modelTest.update { current ->
+            val fps = measuredFps ?: current.fps
+            val (events, counts) = synchronized(testLock) { testLog.snapshot() to testLog.counts() }
+            current.copy(
+                snapshot = analyzed.debug,
                 landmarks = landmarks,
                 frameWidth = frameWidth,
                 frameHeight = frameHeight,
                 fps = fps,
-                events = testLog.snapshot(),
-                counts = testLog.counts(),
+                events = events,
+                counts = counts,
                 replayRunning = fromReplay,
-                replayIndex = if (fromReplay) replayIndex else previous.replayIndex,
-                replayTotal = if (fromReplay) replayTotal else previous.replayTotal,
-                liveLine = liveTriggerLine(frame.debug.wouldFire),
-                lastFireLine = lastFire,
+                replayIndex = if (fromReplay) replayIndex else current.replayIndex,
+                replayTotal = if (fromReplay) replayTotal else current.replayTotal,
+                liveLine = liveTriggerLine(analyzed.debug.wouldFire),
+                lastFireLine = if (fireNames == null || fireClock == null) {
+                    current.lastFireLine
+                } else {
+                    "최근 발화 · $fireNames · $fireClock"
+                },
             )
         }
-        _modelTest.value = next
+        if (firedNow) armTestAlertCountdown()
+    }
+
+    /**
+     * The model-test screen does not open the real countdown and does not call
+     * the guardian API. It only shows that the 30 second clock would have ended.
+     */
+    private fun armTestAlertCountdown() {
+        if (!testAlertArmed.compareAndSet(false, true)) return
+        val generation = testAlertGeneration.get()
+        val total = _state.value.countdownTotalMs.coerceAtLeast(1L)
+        val endsAt = System.currentTimeMillis() + total
+        val job = scope.launch(start = CoroutineStart.LAZY) {
+            try {
+                while (isActive && testAlertGeneration.get() == generation) {
+                    val left = endsAt - System.currentTimeMillis()
+                    if (left <= 0L) break
+                    _modelTest.update { current ->
+                        if (testAlertGeneration.get() != generation) current
+                        else current.copy(alertCountdownMs = left)
+                    }
+                    delay(minOf(200L, left))
+                }
+                if (!isActive || testAlertGeneration.get() != generation) return@launch
+                val event = alertStageEvent(System.currentTimeMillis())
+                val logged = synchronized(testLock) {
+                    testLog.addAll(listOf(event))
+                    testLog.snapshot() to testLog.counts()
+                }
+                _modelTest.update { current ->
+                    if (testAlertGeneration.get() != generation) current
+                    else current.copy(
+                        alertCountdownMs = null,
+                        alertStageLine = ALERT_STAGE_NOTE,
+                        events = logged.first,
+                        counts = logged.second,
+                    )
+                }
+            } finally {
+                if (testAlertJob.compareAndSet(coroutineContext[Job], null) &&
+                    testAlertGeneration.get() == generation
+                ) {
+                    testAlertArmed.set(false)
+                }
+            }
+        }
+        testAlertJob.set(job)
+        job.start()
+    }
+
+    private fun cancelTestAlert() {
+        testAlertGeneration.incrementAndGet()
+        testAlertJob.getAndSet(null)?.cancel()
+        testAlertArmed.set(false)
+        _modelTest.update { it.copy(alertCountdownMs = null) }
     }
 
     private fun cameraKeptAlive(): Boolean {
