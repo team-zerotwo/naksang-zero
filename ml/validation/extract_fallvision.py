@@ -38,23 +38,20 @@ from pose_common import (
 LS, RS, LH, RH = 11, 12, 23, 24
 
 
-def classify(path: Path) -> tuple[str, str]:
-    blob = "/".join(path.parts).lower()
-    if "nf_raw" in blob or "/nf_" in blob:
-        kind = "adl"
-    elif "f_raw" in blob or "/f_" in blob:
-        kind = "fall"
-    else:
-        kind = "adl"
-    if "_b_" in blob or "/bed" in blob:
-        activity = "bed"
-    elif "_c_" in blob or "/chair" in blob:
-        activity = "chair"
-    elif "_s_" in blob or "/stand" in blob:
-        activity = "standing"
-    else:
-        activity = "other"
-    return kind, activity
+def classify(path: Path) -> tuple[str, str] | None:
+    """The RAR name is not the label. B/C/S is bed/chair/standing.
+
+    `_D_` is a fall to the floor. `_N_` is a no-fall. `_M_` stays on the bed
+    or chair (a roll, not a fall to the floor) and is an ADL. Checked on a
+    bed roll clip and a bed-to-floor fall clip from the raw files.
+    """
+    name = path.name
+    activity = {"B": "bed", "C": "chair", "S": "standing"}.get(name[:1].upper(), "other")
+    if "_D_" in name:
+        return "fall", activity
+    if "_N_" in name or "_M_" in name:
+        return "adl", activity
+    return None
 
 
 def _torso_angle(row) -> float | None:
@@ -90,6 +87,7 @@ def infer_onset_ms(csv_path: Path) -> str:
 
     times = []
     angles = []
+    centers = []
     tracked = None
     with csv_path.open(newline="") as handle:
         reader = csv.reader(handle)
@@ -99,12 +97,23 @@ def infer_onset_ms(csv_path: Path) -> str:
                 continue
             values = [float(cell) for cell in cells[: 3 + 33 * 3]]
             angle = _torso_angle(values)
-            if angle is None:
-                tracked = None
-            else:
+            cy = None
+            if angle is not None:
                 tracked = angle if tracked is None else 0.55 * angle + 0.45 * tracked
+                shoulders = []
+                hips = []
+                for index, bucket in ((LS, shoulders), (RS, shoulders), (LH, hips), (RH, hips)):
+                    base = 3 + index * 3
+                    if values[base + 2] < 0.35:
+                        continue
+                    bucket.append(values[base + 1])
+                if shoulders and hips:
+                    cy = (sum(shoulders) / len(shoulders) + sum(hips) / len(hips)) / 2.0
+            else:
+                tracked = None
             times.append(int(float(cells[0])))
             angles.append(tracked)
+            centers.append(cy)
     best_flat = None
     min_angle = None
     min_at = None
@@ -136,6 +145,13 @@ def infer_onset_ms(csv_path: Path) -> str:
         and first - min_angle >= 15.0
     ):
         return str(min_at)
+    # Along the camera the torso stays steep while the center drops.
+    seen_cy = [(stamp, cy) for stamp, cy in zip(times, centers) if cy is not None]
+    if len(seen_cy) >= 4 and min_angle is not None and min_angle >= 55.0:
+        base_cy = seen_cy[0][1]
+        peak = max(seen_cy, key=lambda item: item[1])
+        if peak[1] - base_cy >= 0.15:
+            return str(peak[0])
     return ""
 
 
@@ -164,6 +180,10 @@ def merge_rows(out: Path) -> list[dict]:
             if row["video_id"] in seen:
                 continue
             seen.add(row["video_id"])
+            if row.get("kind") == "fall":
+                csv_path = out / row["csv_file"]
+                if csv_path.is_file():
+                    row["onset_ms"] = infer_onset_ms(csv_path)
             rows.append(row)
     return rows
 
@@ -202,7 +222,10 @@ def main() -> int:
         for index, video in enumerate(videos, start=1):
             vid = video_id_for(video, args.data)
             csv_path = args.out / f"{vid}.csv"
-            kind, activity = classify(video)
+            classified = classify(video)
+            if classified is None:
+                continue
+            kind, activity = classified
             try:
                 info = probe_video(video)
                 if csv_path.is_file() and not args.force and csv_path.stat().st_size > 0:

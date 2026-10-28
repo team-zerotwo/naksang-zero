@@ -12,6 +12,8 @@
 ## 원칙
 영상은 기기 밖으로 보내지 않고, 판정 결과와 시각, 주소 정보만 서버에 남긴다.
 
+학습에 쓴 공개 데이터 가운데 UR Fall(CC BY-NC-SA 4.0)이 있으므로, 출고 포즈 가중치는 **비상업 전용**이다. 상업적으로 쓰려면 UR를 빼고 다시 학습해야 한다. 데이터별 라이선스와 받지 못한 후보는 `ml/validation/EXPERIMENTS.md`와 `ml/train/README.md`에 있다. 원본 영상과 랜드마크 CSV는 저장소에 넣지 않는다.
+
 ## 보호자 웹·서버
 로컬 실행은 `server/README.md`, `guardian-web/README.md`. 한 도메인으로 띄울 Dockerfile은 저장소 루트에 있다. 웹 푸시는 HTTPS가 필수다.
 

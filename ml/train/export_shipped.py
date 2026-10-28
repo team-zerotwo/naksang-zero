@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Fit the shipped pose models on CAUCAFall and GMDCSA-24 only.
+"""Fit the shipped pose models on CAUCAFall, GMDCSA-24, and UR Fall side views.
 
-UR Fall is scored when it is on disk and is never a training row. The
-thresholds are the highest ones with zero ADL false alarms on the commercial
-clips, after the most falls. Kotlin evaluates both scores. A suspicion is
-either score held for two frames, or the existing rule, or the fast-flat
-rule, or lying still.
+UR ceiling clips stay out of the fit: image y is not gravity there, and there
+is no ceiling ADL set. The thresholds are the highest ones with zero ADL false
+alarms on the clips that were fit, after the most falls. That choice sees UR
+side ADL. The honest unseen number is leave-one-dataset-out in
+ml/validation/EXPERIMENTS.md, which does not. Kotlin evaluates both scores.
 
     ml/validation/.venv/bin/python ml/train/export_shipped.py
 """
@@ -183,8 +183,13 @@ def main() -> int:
         print("need CAUCAFall and GMDCSA landmarks", file=sys.stderr)
         return 1
     train = by_name["caucafall"] + by_name["gmdcsa"]
-    logreg = fit_kind("logreg", train, 7)
-    gbdt = fit_kind("gbdt", train, 7)
+    if "urfall" in by_name:
+        side = [clip for clip in by_name["urfall"] if not clip.get("ceiling")]
+        train.extend(side)
+        print(f"UR side clips in the fit {len(side)}", flush=True)
+    fit_kwargs = {"skip_datasets": (), "skip_ceiling": True}
+    logreg = fit_kind("logreg", train, 7, **fit_kwargs)
+    gbdt = fit_kind("gbdt", train, 7, **fit_kwargs)
     lr_stats, lr_thr, _ = best_threshold(train, cache_any(train, logreg))
     gb_stats, gb_thr, _ = best_threshold(train, cache_any(train, gbdt))
     print(f"logreg thr {lr_thr} {lr_stats['falls']}/{lr_stats['fall_total']} adl {lr_stats['adl_false']}")
@@ -192,14 +197,14 @@ def main() -> int:
     if lr_thr is None or gb_thr is None:
         print("no zero-ADL threshold", file=sys.stderr)
         return 1
-    x, _y = experiment.training_matrix(train)
+    x, _y = experiment.training_matrix(train, **fit_kwargs)
     init = gbdt_init(gbdt["clf"])
     flat = flatten_trees(gbdt)
     check_gbdt(gbdt, flat, init, x)
     print("gbdt walk matches sklearn")
     logreg["threshold"] = lr_thr
     logreg["hold_frames"] = 2
-    logreg["trained_on"] = ["caucafall", "gmdcsa"]
+    logreg["trained_on"] = ["caucafall", "gmdcsa", "urfall-side"]
     logreg["feature_names"] = list(FEATURE_NAMES)
     logreg["gbdt_threshold"] = gb_thr
     kotlin_path = (
@@ -220,8 +225,11 @@ def main() -> int:
     model_path = ROOT / "models" / "pose_fall_model.json"
     public = {key: value for key, value in logreg.items() if key != "clf"}
     public["notes"] = (
-        "Trained on CAUCAFall and GMDCSA-24 only. UR Fall is not a training row. "
-        "A second gradient-boosted tree uses the same features; its threshold is gbdt_threshold."
+        "Trained on CAUCAFall, GMDCSA-24, and UR Fall side views. "
+        "UR Fall is CC BY-NC-SA 4.0, so these weights are for non-commercial use. "
+        "Ceiling clips are not training rows. "
+        "A second gradient-boosted tree uses the same features; its threshold is gbdt_threshold. "
+        "The thresholds were chosen on these same clips. Leave-one-dataset-out is the unseen score."
     )
     model_path.write_text(json.dumps(public, indent=2))
     reference_samples(train, logreg, ROOT.parent / "android" / "app" / "src" / "test" / "resources" / "pose_fall_reference.json")

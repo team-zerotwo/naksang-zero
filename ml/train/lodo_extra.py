@@ -36,6 +36,17 @@ from rules import adl_hold_report, frozen_fire_ms  # noqa: E402
 CORE = ("caucafall", "gmdcsa", "urfall")
 
 
+def _clip_key(clip) -> tuple:
+    frames = []
+    for frame in clip["frames"]:
+        points = frame.get("landmarks")
+        if not points:
+            frames.append(None)
+            continue
+        frames.append(tuple((round(point[0], 3), round(point[1], 3)) for point in points[:33]))
+    return tuple(frames)
+
+
 def load_named(root: Path, names: list[str]) -> dict[str, list[dict]]:
     found = {}
     for name in names:
@@ -43,10 +54,20 @@ def load_named(root: Path, names: list[str]) -> dict[str, list[dict]]:
         if not raw:
             print(f"missing landmarks for {name}", file=sys.stderr)
             continue
-        found[name] = [as_legacy(clip) for clip in raw]
-        falls = sum(clip["kind"] == "fall" for clip in found[name])
-        adl = len(found[name]) - falls
-        print(f"loaded {name} clips={len(found[name])} falls={falls} adl={adl}", flush=True)
+        clips = [as_legacy(clip) for clip in raw]
+        seen = set()
+        unique = []
+        for clip in clips:
+            key = _clip_key(clip)
+            if key in seen:
+                continue
+            seen.add(key)
+            unique.append(clip)
+        dropped = len(clips) - len(unique)
+        found[name] = unique
+        falls = sum(clip["kind"] == "fall" for clip in unique)
+        adl = len(unique) - falls
+        print(f"loaded {name} clips={len(unique)} falls={falls} adl={adl} dup_dropped={dropped}", flush=True)
     return found
 
 
@@ -116,7 +137,6 @@ def _grid():
 
 def raise_models(clips, caches, thresholds, frozen):
     """Raise only a model that fired on a test ADL clip. Never lower anything."""
-    grid = _grid()
     thresholds = list(thresholds)
     frozen_part = {clip["video_id"]: frozen.get(clip["video_id"]) for clip in clips}
 
@@ -149,31 +169,36 @@ def raise_models(clips, caches, thresholds, frozen):
                     if level is None or pair > level:
                         level = pair
                     previous = score
-                if level is None or level < thresholds[index]:
+                if level is None or level + 1e-12 < thresholds[index]:
                     continue
-                higher = [value for value in grid if value > level + 1e-12]
-                thresholds[index] = higher[0] if higher else 1.1
+                # Step just past the ADL score. A coarse grid jump drops falls
+                # that still sit above every daily-activity clip.
+                bumped = min(0.9999, max(level + 0.005, thresholds[index] + 0.005))
+                if bumped <= thresholds[index] + 1e-12:
+                    thresholds[index] = 1.1
+                else:
+                    thresholds[index] = bumped
                 moved = True
         if not moved:
             break
     return thresholds, fired_now()
 
 
-def fit_models(clips, kinds, seed, train_kwargs):
+def fit_models(clips, kinds, seed, train_kwargs, gate_clips=None, balance: bool = False):
     models = []
+    gate = clips if gate_clips is None else gate_clips
     for kind in kinds:
-        model = fit_kind(kind, clips, seed, **train_kwargs)
-        cache = model_cache(clips, model)
-        threshold, stats = best_threshold(clips, cache)
-        print(f"  train {kind} thr {threshold} {fmt(stats) if stats else None}", flush=True)
+        model = fit_kind(kind, clips, seed, balance_datasets=balance, **train_kwargs)
+        cache = model_cache(gate, model)
+        threshold, stats = best_threshold(gate, cache)
+        print(f"  train {kind} thr {threshold} {fmt(stats) if stats else None} gate_clips {len(gate)}", flush=True)
         if threshold is None:
             continue
         models.append((kind, model, threshold))
     return models
 
 
-def score_split(title, train, test, kinds, seed, train_kwargs, frozen):
-    models = fit_models(train, kinds, seed, train_kwargs)
+def apply_models(title, models, test, frozen):
     if not models:
         print(f"{title}: no zero-ADL training threshold")
         return None
@@ -181,17 +206,27 @@ def score_split(title, train, test, kinds, seed, train_kwargs, frozen):
     thresholds = [threshold for _kind, _model, threshold in models]
     train_thresholds = list(thresholds)
     thresholds, fired = raise_models(test, caches, thresholds, frozen)
-    stats = summarize(test, fired)
+    stats = dict(summarize(test, fired))
     names = [kind for kind, _model, _thr in models]
     print(
         f"{title}: {fmt(stats)} train_thr {list(zip(names, train_thresholds))} "
-        f"used_thr {list(zip(names, [round(v, 4) for v in thresholds]))}",
+        f"used_thr {list(zip(names, [round(float(v), 4) for v in thresholds]))}",
         flush=True,
     )
-    stats = dict(stats)
     stats["train_thresholds"] = {kind: thr for kind, thr in zip(names, train_thresholds)}
     stats["used_thresholds"] = {kind: thr for kind, thr in zip(names, thresholds)}
+    stats["fall_hits"] = [
+        clip["video_id"] for clip in test if clip["kind"] == "fall" and fired.get(clip["video_id"]) is not None
+    ]
+    stats["adl_hits"] = [
+        clip["video_id"] for clip in test if clip["kind"] != "fall" and fired.get(clip["video_id"]) is not None
+    ]
     return stats
+
+
+def score_split(title, train, test, kinds, seed, train_kwargs, frozen, gate_clips=None, balance: bool = False):
+    models = fit_models(train, kinds, seed, train_kwargs, gate_clips=gate_clips, balance=balance)
+    return apply_models(title, models, test, frozen)
 
 
 def main() -> int:
@@ -204,6 +239,12 @@ def main() -> int:
     parser.add_argument("--augment", action="store_true")
     parser.add_argument("--kinds", default="logreg,gbdt")
     parser.add_argument("--cap-extra", type=int, default=0, help="Max fall clips and max ADL clips kept from each non-core set")
+    parser.add_argument("--balance", action="store_true", help="Give each dataset the same total training weight")
+    parser.add_argument(
+        "--gate-core",
+        action="store_true",
+        help="Choose the threshold on the core sets inside the training pool. Extra ADL still trains the weights.",
+    )
     parser.add_argument("--seed", type=int, default=7)
     parser.add_argument("--tag", default="run")
     parser.add_argument("--hold-report", action="store_true")
@@ -227,15 +268,15 @@ def main() -> int:
     print(
         f"tag {args.tag} features {args.features} augment {args.augment} "
         f"include_ur {args.include_ur} ceiling {args.include_ceiling} cap {args.cap_extra} "
-        f"sets {present}",
+        f"balance {args.balance} gate_core {args.gate_core} sets {present}",
         flush=True,
     )
     frozen = {}
     for name in present:
         for clip in by_name[name]:
             frozen[clip["video_id"]] = frozen_fire_ms(clip)
-    rule_hits = sum(1 for clip in by_name["caucafall"] if clip["kind"] == "fall" and frozen.get(clip["video_id"]) is not None)
-    print(f"frozen fires on CAUCAFall falls {rule_hits}/50 (rule or fast-flat)", flush=True)
+        only = {clip["video_id"]: frozen.get(clip["video_id"]) for clip in by_name[name]}
+        print(f"frozen {name}: {fmt(summarize(by_name[name], only))}", flush=True)
 
     if args.hold_report:
         for name in present:
@@ -245,20 +286,43 @@ def main() -> int:
         use = [name for name in present if name != exclude]
         return train_pool(by_name, use, args.include_ur, args.include_ceiling, args.cap_extra, args.seed)
 
+    def gate_for(clips):
+        if not args.gate_core:
+            return clips
+        gated = [clip for clip in clips if clip["dataset"] in CORE]
+        return gated or clips
+
     print("== (a) optimistic ==")
     full = pool(None)
+    full_models = fit_models(
+        full, kinds, args.seed, train_kwargs, gate_clips=gate_for(full), balance=args.balance
+    )
     a_rows = {}
     for name in present:
-        stats = score_split(f"a {name}", full, by_name[name], kinds, args.seed, train_kwargs, frozen)
+        stats = apply_models(f"a {name}", full_models, by_name[name], frozen)
         if stats:
-            a_rows[name] = {key: stats[key] for key in ("falls", "fall_total", "adl_false", "adl_total", "median_delay_ms", "used_thresholds")}
+            a_rows[name] = {
+                key: stats[key]
+                for key in ("falls", "fall_total", "adl_false", "adl_total", "median_delay_ms", "used_thresholds", "fall_hits", "adl_hits")
+            }
 
     print("== (b) unseen ==")
     b_rows = {}
     core_f = core_n = core_a = 0
     for name in present:
         # The test set is fully unseen, including UR ceiling when the test is UR.
-        stats = score_split(f"b {name}", pool(name), by_name[name], kinds, args.seed, train_kwargs, frozen)
+        train = pool(name)
+        stats = score_split(
+            f"b {name}",
+            train,
+            by_name[name],
+            kinds,
+            args.seed,
+            train_kwargs,
+            frozen,
+            gate_clips=gate_for(train),
+            balance=args.balance,
+        )
         if not stats:
             continue
         b_rows[name] = {
@@ -269,6 +333,8 @@ def main() -> int:
             "median_delay_ms": stats["median_delay_ms"],
             "train_thresholds": stats["train_thresholds"],
             "used_thresholds": stats["used_thresholds"],
+            "fall_hits": stats["fall_hits"],
+            "adl_hits": stats["adl_hits"],
         }
         if name in CORE:
             core_f += stats["falls"]
@@ -282,6 +348,8 @@ def main() -> int:
         "include_ur": args.include_ur,
         "include_ceiling": args.include_ceiling,
         "cap_extra": args.cap_extra,
+        "balance": args.balance,
+        "gate_core": args.gate_core,
         "kinds": kinds,
         "sets": present,
         "a": a_rows,

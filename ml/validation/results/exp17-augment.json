@@ -1,0 +1,269 @@
+{
+  "tag": "exp17-augment",
+  "features": "v6",
+  "augment": true,
+  "include_ur": true,
+  "include_ceiling": false,
+  "cap_extra": 0,
+  "balance": false,
+  "gate_core": false,
+  "kinds": [
+    "logreg",
+    "gbdt"
+  ],
+  "sets": [
+    "caucafall",
+    "gmdcsa",
+    "urfall"
+  ],
+  "a": {
+    "caucafall": {
+      "falls": 18,
+      "fall_total": 50,
+      "adl_false": 0,
+      "adl_total": 50,
+      "median_delay_ms": 2750,
+      "used_thresholds": {
+        "logreg": 0.995,
+        "gbdt": 0.94
+      },
+      "fall_hits": [
+        "s01_forward",
+        "s01_from_sitting",
+        "s02_left",
+        "s02_right",
+        "s03_right",
+        "s05_backward",
+        "s05_from_sitting",
+        "s05_right",
+        "s06_forward",
+        "s06_from_sitting",
+        "s07_backward",
+        "s07_right",
+        "s09_backward",
+        "s09_forward",
+        "s09_left",
+        "s09_right",
+        "s10_left",
+        "s10_right"
+      ],
+      "adl_hits": []
+    },
+    "gmdcsa": {
+      "falls": 49,
+      "fall_total": 79,
+      "adl_false": 0,
+      "adl_total": 81,
+      "median_delay_ms": 1500,
+      "used_thresholds": {
+        "logreg": 0.995,
+        "gbdt": 0.94
+      },
+      "fall_hits": [
+        "gmdcsa_s01_fall_03",
+        "gmdcsa_s01_fall_04",
+        "gmdcsa_s01_fall_05",
+        "gmdcsa_s01_fall_07",
+        "gmdcsa_s01_fall_08",
+        "gmdcsa_s01_fall_09",
+        "gmdcsa_s01_fall_10",
+        "gmdcsa_s01_fall_11",
+        "gmdcsa_s01_fall_12",
+        "gmdcsa_s01_fall_15",
+        "gmdcsa_s02_fall_01",
+        "gmdcsa_s02_fall_02",
+        "gmdcsa_s02_fall_04",
+        "gmdcsa_s02_fall_06",
+        "gmdcsa_s02_fall_08",
+        "gmdcsa_s02_fall_10",
+        "gmdcsa_s02_fall_12",
+        "gmdcsa_s02_fall_13",
+        "gmdcsa_s02_fall_15",
+        "gmdcsa_s02_fall_16",
+        "gmdcsa_s02_fall_17",
+        "gmdcsa_s02_fall_18",
+        "gmdcsa_s02_fall_19",
+        "gmdcsa_s02_fall_20",
+        "gmdcsa_s02_fall_21",
+        "gmdcsa_s02_fall_22",
+        "gmdcsa_s02_fall_23",
+        "gmdcsa_s02_fall_24",
+        "gmdcsa_s02_fall_25",
+        "gmdcsa_s03_fall_01",
+        "gmdcsa_s03_fall_02",
+        "gmdcsa_s03_fall_03",
+        "gmdcsa_s03_fall_04",
+        "gmdcsa_s03_fall_05",
+        "gmdcsa_s03_fall_06",
+        "gmdcsa_s03_fall_07",
+        "gmdcsa_s03_fall_08",
+        "gmdcsa_s03_fall_11",
+        "gmdcsa_s03_fall_16",
+        "gmdcsa_s03_fall_20",
+        "gmdcsa_s03_fall_21",
+        "gmdcsa_s04_fall_01",
+        "gmdcsa_s04_fall_04",
+        "gmdcsa_s04_fall_05",
+        "gmdcsa_s04_fall_07",
+        "gmdcsa_s04_fall_11",
+        "gmdcsa_s04_fall_13",
+        "gmdcsa_s04_fall_15",
+        "gmdcsa_s04_fall_16"
+      ],
+      "adl_hits": []
+    },
+    "urfall": {
+      "falls": 4,
+      "fall_total": 60,
+      "adl_false": 0,
+      "adl_total": 40,
+      "median_delay_ms": 700,
+      "used_thresholds": {
+        "logreg": 0.995,
+        "gbdt": 0.94
+      },
+      "fall_hits": [
+        "ur_fall_02_cam0",
+        "ur_fall_03_cam1",
+        "ur_fall_05_cam0",
+        "ur_fall_11_cam0"
+      ],
+      "adl_hits": []
+    }
+  },
+  "b": {
+    "caucafall": {
+      "falls": 18,
+      "fall_total": 50,
+      "adl_false": 0,
+      "adl_total": 50,
+      "median_delay_ms": 2750,
+      "train_thresholds": {
+        "logreg": 0.99,
+        "gbdt": 0.94
+      },
+      "used_thresholds": {
+        "logreg": 0.99,
+        "gbdt": 0.94
+      },
+      "fall_hits": [
+        "s01_forward",
+        "s01_from_sitting",
+        "s02_left",
+        "s02_right",
+        "s03_right",
+        "s05_backward",
+        "s05_from_sitting",
+        "s05_right",
+        "s06_forward",
+        "s06_from_sitting",
+        "s07_backward",
+        "s07_right",
+        "s09_backward",
+        "s09_forward",
+        "s09_left",
+        "s09_right",
+        "s10_left",
+        "s10_right"
+      ],
+      "adl_hits": []
+    },
+    "gmdcsa": {
+      "falls": 57,
+      "fall_total": 79,
+      "adl_false": 0,
+      "adl_total": 81,
+      "median_delay_ms": 1400,
+      "train_thresholds": {
+        "logreg": 0.997,
+        "gbdt": 0.94
+      },
+      "used_thresholds": {
+        "logreg": 0.9999,
+        "gbdt": 0.9474150183855259
+      },
+      "fall_hits": [
+        "gmdcsa_s01_fall_01",
+        "gmdcsa_s01_fall_02",
+        "gmdcsa_s01_fall_03",
+        "gmdcsa_s01_fall_04",
+        "gmdcsa_s01_fall_05",
+        "gmdcsa_s01_fall_06",
+        "gmdcsa_s01_fall_07",
+        "gmdcsa_s01_fall_08",
+        "gmdcsa_s01_fall_09",
+        "gmdcsa_s01_fall_10",
+        "gmdcsa_s01_fall_11",
+        "gmdcsa_s01_fall_12",
+        "gmdcsa_s01_fall_15",
+        "gmdcsa_s01_fall_16",
+        "gmdcsa_s02_fall_01",
+        "gmdcsa_s02_fall_02",
+        "gmdcsa_s02_fall_04",
+        "gmdcsa_s02_fall_05",
+        "gmdcsa_s02_fall_06",
+        "gmdcsa_s02_fall_07",
+        "gmdcsa_s02_fall_08",
+        "gmdcsa_s02_fall_10",
+        "gmdcsa_s02_fall_12",
+        "gmdcsa_s02_fall_13",
+        "gmdcsa_s02_fall_14",
+        "gmdcsa_s02_fall_16",
+        "gmdcsa_s02_fall_17",
+        "gmdcsa_s02_fall_18",
+        "gmdcsa_s02_fall_19",
+        "gmdcsa_s02_fall_20",
+        "gmdcsa_s02_fall_21",
+        "gmdcsa_s02_fall_22",
+        "gmdcsa_s02_fall_23",
+        "gmdcsa_s02_fall_24",
+        "gmdcsa_s02_fall_25",
+        "gmdcsa_s03_fall_01",
+        "gmdcsa_s03_fall_02",
+        "gmdcsa_s03_fall_03",
+        "gmdcsa_s03_fall_04",
+        "gmdcsa_s03_fall_05",
+        "gmdcsa_s03_fall_06",
+        "gmdcsa_s03_fall_07",
+        "gmdcsa_s03_fall_08",
+        "gmdcsa_s03_fall_11",
+        "gmdcsa_s03_fall_12",
+        "gmdcsa_s03_fall_16",
+        "gmdcsa_s03_fall_19",
+        "gmdcsa_s03_fall_20",
+        "gmdcsa_s03_fall_21",
+        "gmdcsa_s04_fall_01",
+        "gmdcsa_s04_fall_04",
+        "gmdcsa_s04_fall_05",
+        "gmdcsa_s04_fall_07",
+        "gmdcsa_s04_fall_10",
+        "gmdcsa_s04_fall_11",
+        "gmdcsa_s04_fall_13",
+        "gmdcsa_s04_fall_16"
+      ],
+      "adl_hits": []
+    },
+    "urfall": {
+      "falls": 1,
+      "fall_total": 60,
+      "adl_false": 0,
+      "adl_total": 40,
+      "median_delay_ms": 600,
+      "train_thresholds": {
+        "logreg": 0.999,
+        "gbdt": 0.94
+      },
+      "used_thresholds": {
+        "logreg": 0.999,
+        "gbdt": 0.94
+      },
+      "fall_hits": [
+        "ur_fall_05_cam0"
+      ],
+      "adl_hits": []
+    }
+  },
+  "b_core_falls": 76,
+  "b_core_total": 189,
+  "b_core_adl": 0
+}

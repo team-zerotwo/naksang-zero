@@ -86,10 +86,19 @@ for spec in "${raws[@]}"; do
   id="${spec%% *}"
   name="${spec##* }"
   dl "https://dataverse.harvard.edu/api/access/datafile/${id}" "$DATA/fallvision/${name}"
-  dest="$DATA/fallvision/unpacked/${name%.rar}"
-  if [ ! -d "$dest" ]; then
-    mkdir -p "$dest"
-    unar -q -o "$dest" "$DATA/fallvision/${name}" || echo "UNAR_FAIL $name"
+  # Each RAR is its own archive. unar treats sibling RARs as extra volumes
+  # and then extracts the wrong files, so unpack from a directory that holds
+  # only this one archive. Labels come from the mp4 name, not the RAR name.
+  stem="${name%.rar}"
+  dest="$DATA/fallvision/unpacked/$stem"
+  if [ ! -d "$dest" ] || [ -z "$(find "$dest" -name '*.mp4' -print -quit)" ]; then
+    rm -rf "$dest"
+    alone="$DATA/fallvision/alone-$stem"
+    rm -rf "$alone"
+    mkdir -p "$alone" "$DATA/fallvision/unpacked"
+    ln -s "$DATA/fallvision/$name" "$alone/$name"
+    unar -q -o "$DATA/fallvision/unpacked" "$alone/$name" || echo "UNAR_FAIL $name"
+    rm -rf "$alone"
   fi
   echo "UNPACKED $name"
 done
