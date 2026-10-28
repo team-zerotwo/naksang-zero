@@ -116,11 +116,16 @@ def _scale_y(frames, factor: float):
     return out
 
 
-def training_matrix(clips):
+def training_matrix(clips, skip_ceiling: bool = True, skip_datasets=("urfall",), return_groups: bool = False):
+    """Default skips match the v8 commercial-only fit. Pass skip_datasets=() to keep UR."""
     xs = []
     ys = []
+    groups = []
+    skipped = set(skip_datasets)
     for clip in clips:
-        if clip.get("ceiling") or clip.get("dataset") == "urfall":
+        if skip_ceiling and clip.get("ceiling"):
+            continue
+        if clip.get("dataset") in skipped:
             continue
         positives = []
         negatives = []
@@ -156,8 +161,10 @@ def training_matrix(clips):
             negatives = [negatives[i] for i in pick]
         xs.extend(positives)
         ys.extend([1] * len(positives))
+        groups.extend([clip.get("dataset") or ""] * len(positives))
         xs.extend(negatives)
         ys.extend([0] * len(negatives))
+        groups.extend([clip.get("dataset") or ""] * len(negatives))
         if AUGMENT:
             for window_f, window_t in raw_pos:
                 for factor in (0.8, 1.2):
@@ -165,23 +172,42 @@ def training_matrix(clips):
                     if feats is not None:
                         xs.append(feats)
                         ys.append(1)
+                        groups.append(clip.get("dataset") or "")
     if not xs:
         raise RuntimeError("no training windows")
-    return np.asarray(xs, dtype=np.float64), np.asarray(ys, dtype=np.float64)
+    x = np.asarray(xs, dtype=np.float64)
+    y = np.asarray(ys, dtype=np.float64)
+    if return_groups:
+        return x, y, groups
+    return x, y
 
 
-def fit_kind(kind: str, clips, seed: int):
-    x, y = training_matrix(clips)
+def dataset_weights(groups: list[str]) -> np.ndarray:
+    """Each dataset contributes the same total weight, so a large new set cannot drown the others."""
+    counts: dict[str, int] = {}
+    for name in groups:
+        counts[name] = counts.get(name, 0) + 1
+    weights = np.array([1.0 / counts[name] for name in groups], dtype=np.float64)
+    return weights * (len(weights) / weights.sum())
+
+
+def fit_kind(kind: str, clips, seed: int, balance_datasets: bool = False, **train_kwargs):
+    if balance_datasets:
+        x, y, groups = training_matrix(clips, return_groups=True, **train_kwargs)
+        weights = dataset_weights(groups)
+    else:
+        x, y = training_matrix(clips, **train_kwargs)
+        weights = None
     if kind == "mlp":
         return fit_mlp(x, y, seed=seed)
     if kind == "logreg":
-        return fit_logreg(x, y)
+        return fit_logreg(x, y, sample_weight=weights)
     if kind == "gbdt":
-        return fit_gbdt(x, y)
+        return fit_gbdt(x, y, sample_weight=weights)
     raise ValueError(kind)
 
 
-def fit_gbdt(x, y):
+def fit_gbdt(x, y, sample_weight=None):
     from sklearn.ensemble import GradientBoostingClassifier
 
     mean = x.mean(axis=0)
@@ -197,6 +223,8 @@ def fit_gbdt(x, y):
     )
     pos = max(float(y.mean()), 1e-3)
     weight = np.where(y > 0.5, 0.5 / pos, 0.5 / (1.0 - pos))
+    if sample_weight is not None:
+        weight = weight * np.asarray(sample_weight, dtype=np.float64)
     clf.fit(z, y, sample_weight=weight)
     return {"kind": "gbdt", "mean": mean.tolist(), "std": std.tolist(), "clf": clf}
 

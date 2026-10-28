@@ -2,8 +2,8 @@
 """Fit a tiny pose-window fall model and export Kotlin weights.
 
 Reads landmark CSVs produced by ml/validation/extract_*.py. Does not read or
-write video. The shipped weights are fit by export_shipped.py on CAUCAFall
-and GMDCSA-24 only (both CC BY 4.0). UR Fall is never a training row.
+write video. The shipped weights are fit by export_shipped.py on CAUCAFall,
+GMDCSA-24, and UR Fall side views. UR Fall is CC BY-NC-SA 4.0.
 
     python3 ml/train/train_pose_model.py
 """
@@ -196,7 +196,7 @@ def _jitter(frames, rng: np.random.Generator, sigma: float):
     return out
 
 
-def fit_logreg(x: np.ndarray, y: np.ndarray):
+def fit_logreg(x: np.ndarray, y: np.ndarray, sample_weight=None):
     from sklearn.linear_model import LogisticRegression
 
     mean = x.mean(axis=0)
@@ -211,7 +211,7 @@ def fit_logreg(x: np.ndarray, y: np.ndarray):
         solver="lbfgs",
         max_iter=500,
     )
-    clf.fit(z, y)
+    clf.fit(z, y, sample_weight=sample_weight)
     return {
         "kind": "logreg",
         "mean": mean.tolist(),
@@ -503,8 +503,7 @@ def markdown_table(headers, rows) -> str:
 
 
 def main() -> int:
-    # The shipped weights are the commercial-only ensemble. This entry point
-    # stays so the command in older notes still refreshes Kotlin.
+    # Refreshes the Kotlin weights. UR side views are included; ceiling is not.
     from export_shipped import main as export_main
     return export_main()
 
