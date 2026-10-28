@@ -2,6 +2,7 @@ package kr.zerotwo.naksang.detect
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -88,5 +89,32 @@ class PoseSkeletonTest {
             (start == shoulder && end == elbow) || (start == elbow && end == shoulder)
         })
         assertNull(layout.dots.find { it == mapPosePoint(landmarks[15].x, landmarks[15].y, 100, 100, 100f, 100f, false) })
+    }
+
+    @Test
+    fun `돌린 관절은 미리보기 좌표로 되돌아온다`() {
+        val samples = listOf(0.2f to 0.35f, 0f to 0f, 1f to 1f, 0.5f to 0.1f, 0.8f to 0f)
+        for (degrees in listOf(0, 90, 180, 270)) {
+            for ((x, y) in samples) {
+                val turned = rotateNormalizedClockwise(x, y, degrees)
+                val back = unrotateNormalized(turned.first, turned.second, degrees)
+                assertEquals("$degrees x", x, back.first, 0.0001f)
+                assertEquals("$degrees y", y, back.second, 0.0001f)
+            }
+        }
+        // Head at the top of the preview sits on the left after a 90° clockwise turn.
+        val (x, y) = unrotateNormalized(0f, 0.5f, 90)
+        assertEquals(0.5f, x, 0.0001f)
+        assertEquals(0f, y, 0.0001f)
+    }
+
+    @Test
+    fun `보정이 0이면 관절 배열을 그대로 쓴다`() {
+        val joints = arrayOf(floatArrayOf(0.25f, 0.75f, 0.9f))
+        assertSame(joints, joints.unrotateForPreview(0))
+        val turned = joints.unrotateForPreview(180)
+        assertEquals(0.75f, turned[0][0], 0.0001f)
+        assertEquals(0.25f, turned[0][1], 0.0001f)
+        assertEquals(0.9f, turned[0][2], 0.0001f)
     }
 }

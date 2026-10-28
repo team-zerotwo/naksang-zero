@@ -4,8 +4,10 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -15,6 +17,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -32,6 +36,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
@@ -70,63 +75,47 @@ fun CountdownScreen(
         (remainMs.toFloat() / totalMs.coerceAtLeast(1L)).coerceIn(0f, 1f)
     }
 
-    Box(Modifier.fillMaxSize().background(NaksangColors.WarnBg)) {
-        Column(Modifier.statusBarsPadding().padding(start = 24.dp, end = 24.dp, top = 16.dp)) {
-            StatusLine(
-                R.drawable.ic_warn,
-                when {
-                    previewOnly -> "미리보기 · 알림은 가지 않아요"
-                    isTest -> "테스트 · 넘어지신 것 같아요"
-                    else -> "넘어지신 것 같아요"
-                },
-                NaksangColors.Warn,
-            )
-            DisplayText("괜찮으세요?", 44.sp, Modifier.padding(top = 4.dp))
-        }
-
-        Box(
-            Modifier
-                .align(Alignment.TopCenter)
-                .padding(top = 168.dp)
-                .size(320.dp),
-            contentAlignment = Alignment.Center,
-        ) {
-            CountdownRing(progress, Modifier.fillMaxSize())
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(
-                    text = seconds.toString(),
-                    style = displayStyle(128.sp),
-                    textAlign = TextAlign.Center,
-                )
-                Text(
-                    if (previewOnly) "초 · 화면만 재생해요" else "초 뒤 보호자에게 알려요",
-                    color = NaksangColors.Warn,
-                    fontFamily = Pretendard,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 17.sp,
-                )
+    val scrollState = rememberScrollState()
+    Column(Modifier.fillMaxSize().background(NaksangColors.WarnBg)) {
+        BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
+            val ring = countdownRingSize(maxHeight)
+            // Title, ring gap, info lines, and the padding above the button.
+            // A little slack so a tight estimate scrolls instead of clipping.
+            val fits = maxHeight >= ring + CountdownChrome + 16.dp
+            if (fits) {
+                Box(Modifier.fillMaxSize()) {
+                    Column(Modifier.fillMaxSize()) {
+                        CountdownTitle(previewOnly, isTest)
+                        Spacer(Modifier.height(12.dp))
+                        CountdownRingBlock(
+                            ring,
+                            seconds,
+                            progress,
+                            previewOnly,
+                            Modifier.align(Alignment.CenterHorizontally),
+                        )
+                        Spacer(Modifier.weight(1f))
+                        CountdownInfo()
+                        Spacer(Modifier.height(28.dp))
+                    }
+                    WorryHouse(Modifier.align(Alignment.BottomEnd).padding(bottom = 20.dp))
+                }
+            } else {
+                Column(Modifier.fillMaxSize().verticalScroll(scrollState)) {
+                    CountdownTitle(previewOnly, isTest)
+                    Spacer(Modifier.height(12.dp))
+                    Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
+                        CountdownRingBlock(ring, seconds, progress, previewOnly)
+                        WorryHouse(Modifier.align(Alignment.BottomEnd))
+                    }
+                    Spacer(Modifier.height(12.dp))
+                    CountdownInfo()
+                    Spacer(Modifier.height(28.dp))
+                }
             }
         }
-
-        Image(
-            painter = painterResource(R.drawable.illust_house_worry),
-            contentDescription = null,
-            modifier = Modifier
-                .align(Alignment.CenterEnd)
-                .padding(top = 220.dp)
-                .offset(x = 48.dp)
-                .width(180.dp)
-                .rotate(-8f),
-        )
-
-        Column(Modifier.align(Alignment.BottomStart).padding(start = 24.dp, end = 24.dp, bottom = 120.dp).width(240.dp)) {
-            InfoLine("받는 사람", "보호자")
-            InfoLine("함께 보내는 내용", "주소 · 감지 시각")
-        }
-
         Box(
             Modifier
-                .align(Alignment.BottomCenter)
                 .fillMaxWidth()
                 .navigationBarsPadding()
                 .padding(start = 24.dp, end = 24.dp, bottom = 16.dp),
@@ -142,6 +131,81 @@ fun CountdownScreen(
             )
         }
     }
+}
+
+/** Space the title, info lines, and gaps take besides the ring. */
+private val CountdownChrome = 280.dp
+
+/**
+ * Original ring is 320dp. Short screens shrink it, but not below 220dp;
+ * anything that still does not fit scrolls above the pinned button.
+ */
+internal fun countdownRingSize(viewportHeight: Dp): Dp {
+    return (viewportHeight - CountdownChrome).coerceIn(220.dp, 320.dp)
+}
+
+@Composable
+private fun CountdownTitle(previewOnly: Boolean, isTest: Boolean) {
+    Column(Modifier.statusBarsPadding().padding(start = 24.dp, end = 24.dp, top = 16.dp)) {
+        StatusLine(
+            R.drawable.ic_warn,
+            when {
+                previewOnly -> "미리보기 · 알림은 가지 않아요"
+                isTest -> "테스트 · 넘어지신 것 같아요"
+                else -> "넘어지신 것 같아요"
+            },
+            NaksangColors.Warn,
+        )
+        DisplayText("괜찮으세요?", 44.sp, Modifier.padding(top = 4.dp))
+    }
+}
+
+@Composable
+private fun CountdownRingBlock(
+    ring: Dp,
+    seconds: Int,
+    progress: Float,
+    previewOnly: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    val digit = (128f * ring.value / 320f).coerceAtLeast(72f).sp
+    Box(modifier.size(ring), contentAlignment = Alignment.Center) {
+        CountdownRing(progress, Modifier.fillMaxSize())
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(
+                text = seconds.toString(),
+                style = displayStyle(digit),
+                textAlign = TextAlign.Center,
+            )
+            Text(
+                if (previewOnly) "초 · 화면만 재생해요" else "초 뒤 보호자에게 알려요",
+                color = NaksangColors.Warn,
+                fontFamily = Pretendard,
+                fontWeight = FontWeight.Bold,
+                fontSize = 17.sp,
+            )
+        }
+    }
+}
+
+@Composable
+private fun CountdownInfo() {
+    Column(Modifier.padding(start = 24.dp, end = 24.dp).width(240.dp)) {
+        InfoLine("받는 사람", "보호자")
+        InfoLine("함께 보내는 내용", "주소 · 감지 시각")
+    }
+}
+
+@Composable
+private fun WorryHouse(modifier: Modifier) {
+    Image(
+        painter = painterResource(R.drawable.illust_house_worry),
+        contentDescription = null,
+        modifier = modifier
+            .offset(x = 48.dp)
+            .width(180.dp)
+            .rotate(-8f),
+    )
 }
 
 @Composable

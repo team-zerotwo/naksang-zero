@@ -5,8 +5,9 @@ import kotlin.math.max
 /**
  * MediaPipe Pose Landmarker skeleton.
  * Edges match mediapipe/tasks `pose_landmarks_connections.h` (35 connections).
- * The analyzer bitmap is already rotated upright; [mapPosePoint] only does the
- * preview FILL_CENTER crop and the front-camera mirror.
+ * The analyzer bitmap is upright for the pose model. If the phone was rotated,
+ * [unrotateNormalized] puts landmarks back into the portrait preview before
+ * [mapPosePoint] does the FILL_CENTER crop and the front-camera mirror.
  */
 object PoseSkeleton {
     const val LANDMARK_COUNT = 33
@@ -51,6 +52,50 @@ object PoseSkeleton {
 }
 
 data class ScreenPoint(val x: Float, val y: Float)
+
+/**
+ * Undo a clockwise bitmap rotation so a landmark lines up with the portrait
+ * preview. 90° and 270° swap width and height; the preview size is the size
+ * before that extra rotation, not the bitmap the model just saw.
+ * 0° returns the same point.
+ */
+fun unrotateNormalized(x: Float, y: Float, clockwiseDegrees: Int): Pair<Float, Float> {
+    return when (clockwiseDegrees.mod(360)) {
+        0 -> x to y
+        90 -> (1f - y) to x
+        180 -> (1f - x) to (1f - y)
+        270 -> y to (1f - x)
+        else -> x to y
+    }
+}
+
+/** Same rotation [unrotateNormalized] inverts. Used to check the round trip. */
+internal fun rotateNormalizedClockwise(x: Float, y: Float, clockwiseDegrees: Int): Pair<Float, Float> {
+    return when (clockwiseDegrees.mod(360)) {
+        0 -> x to y
+        90 -> y to (1f - x)
+        180 -> (1f - x) to (1f - y)
+        270 -> (1f - y) to x
+        else -> x to y
+    }
+}
+
+/**
+ * Landmarks for the portrait preview. A 0° compensation returns the same array,
+ * so detection and drawing still share one pose when the phone is upright.
+ */
+fun Array<FloatArray>.unrotateForPreview(clockwiseDegrees: Int): Array<FloatArray> {
+    if (clockwiseDegrees.mod(360) == 0) return this
+    return Array(size) { index ->
+        val row = this[index]
+        val (nx, ny) = unrotateNormalized(
+            row.getOrElse(0) { 0f },
+            row.getOrElse(1) { 0f },
+            clockwiseDegrees,
+        )
+        if (row.size >= 3) floatArrayOf(nx, ny, row[2]) else floatArrayOf(nx, ny)
+    }
+}
 
 data class SkeletonLayout(
     val lines: List<Pair<ScreenPoint, ScreenPoint>>,
