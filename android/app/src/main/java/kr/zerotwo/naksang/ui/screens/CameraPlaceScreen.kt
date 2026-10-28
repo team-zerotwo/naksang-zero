@@ -110,7 +110,7 @@ fun CameraPlaceScreen(
                         ),
                     ),
             )
-            PersonOverlay(
+            PosePersonOverlay(
                 visible = personVisible,
                 personX = personX,
                 personY = personY,
@@ -190,7 +190,7 @@ fun CameraPlaceScreen(
 }
 
 @Composable
-private fun PersonOverlay(
+internal fun PosePersonOverlay(
     visible: Boolean,
     personX: Float,
     personY: Float,
@@ -199,6 +199,7 @@ private fun PersonOverlay(
     frameHeight: Int,
     mirrorX: Boolean,
     minVisibility: Float,
+    showBadge: Boolean = true,
 ) {
     Canvas(Modifier.fillMaxSize()) {
         if (!visible) return@Canvas
@@ -252,7 +253,7 @@ private fun PersonOverlay(
             drawCircle(color = NaksangColors.Ok, radius = dot, center = Offset(point.x, point.y))
         }
     }
-    if (visible) {
+    if (visible && showBadge) {
         Text(
             "사람 인식",
             color = Color.White,

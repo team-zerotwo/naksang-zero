@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.BatteryManager
 import android.os.Handler
 import android.os.Looper
@@ -20,6 +21,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -27,6 +29,7 @@ import kr.zerotwo.naksang.BuildConfig
 import kr.zerotwo.naksang.MainActivity
 import kr.zerotwo.naksang.camera.FallCameraEngine
 import kr.zerotwo.naksang.camera.PoseReader
+import kr.zerotwo.naksang.camera.VideoFrameDecoder
 import kr.zerotwo.naksang.data.AddressBody
 import kr.zerotwo.naksang.data.ApiFactory
 import kr.zerotwo.naksang.data.ApiResult
@@ -36,15 +39,24 @@ import kr.zerotwo.naksang.data.NaksangRepository
 import kr.zerotwo.naksang.data.Outcomes
 import kr.zerotwo.naksang.data.PendingFall
 import kr.zerotwo.naksang.data.SessionStore
+import kr.zerotwo.naksang.detect.FallAnalysis
 import kr.zerotwo.naksang.detect.FallConfig
-import kr.zerotwo.naksang.detect.FallDetector
-import kr.zerotwo.naksang.detect.LyingStillDetector
-import kr.zerotwo.naksang.detect.PoseFallScorer
+import kr.zerotwo.naksang.detect.FallDebugSnapshot
+import kr.zerotwo.naksang.detect.FrameRate
+import kr.zerotwo.naksang.detect.SignalCounts
+import kr.zerotwo.naksang.detect.WouldTriggerLog
+import kr.zerotwo.naksang.detect.formatEventClock
+import kr.zerotwo.naksang.detect.formatWouldTriggerCsv
+import kr.zerotwo.naksang.detect.liveTriggerLine
 import kr.zerotwo.naksang.detect.toJointPoints
 import kr.zerotwo.naksang.detect.torsoCenter
+import kr.zerotwo.naksang.detect.wouldTriggerEvents
 import kr.zerotwo.naksang.service.FallDetectionService
 import kr.zerotwo.naksang.util.IsoTime
 import kr.zerotwo.naksang.util.ServerUrl
+import kr.zerotwo.naksang.util.shareCacheFile
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 
 class AppContainer(private val app: Context) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -54,14 +66,22 @@ class AppContainer(private val app: Context) {
     @Volatile var serverBase: String = BuildConfig.SERVER_BASE_URL
 
     private val repo = NaksangRepository(ApiFactory.create { serverBase })
-    private val detector = FallDetector()
-    private val poseScorer = PoseFallScorer()
-    private val lyingStill = LyingStillDetector()
+    private val analysis = FallAnalysis()
+    private val testAnalysis = FallAnalysis()
+    private val testLog = WouldTriggerLog()
+    private val testFps = FrameRate()
     private val camera = FallCameraEngine(app)
     private val poseReader = PoseReader(app)
+    private val poseLock = Any()
+    private val testLock = Any()
+    private val replayBusy = AtomicBoolean(false)
+    private val replayGeneration = AtomicInteger(0)
 
     private val _state = MutableStateFlow(AppState(serverUrl = BuildConfig.SERVER_BASE_URL))
     val state: StateFlow<AppState> = _state
+    private val _modelTest = MutableStateFlow(ModelTestUi())
+    val modelTest: StateFlow<ModelTestUi> = _modelTest
+    private var replayJob: Job? = null
 
     private var heartbeatJob: Job? = null
     private var countdownJob: Job? = null
@@ -77,25 +97,47 @@ class AppContainer(private val app: Context) {
         camera.onFrame = { bitmap, timestamp ->
             val frameWidth = bitmap.width
             val frameHeight = bitmap.height
-            val joints = try {
-                poseReader.read(bitmap)
+            val packet = try {
+                synchronized(poseLock) {
+                    if (replayBusy.get()) {
+                        null
+                    } else {
+                        poseReader.read(bitmap) to poseReader.loadFailed()
+                    }
+                }
             } finally {
                 bitmap.recycle()
             }
-            val modelFailed = poseReader.loadFailed()
-            mainHandler.post {
-                if (modelFailed) {
-                    _state.update { it.copy(cameraError = "포즈 모델을 열지 못했어요") }
+            if (packet != null) {
+                val (joints, modelFailed) = packet
+                mainHandler.post {
+                    if (modelFailed) {
+                        _state.update { it.copy(cameraError = "포즈 모델을 열지 못했어요") }
+                    }
+                    if (_state.value.route == Route.ModelTest) {
+                        if (!replayBusy.get()) {
+                            onTestFrame(
+                                timestampMs = timestamp,
+                                joints = joints,
+                                frameWidth = frameWidth,
+                                frameHeight = frameHeight,
+                                videoOffsetMs = null,
+                                replayIndex = 0,
+                                replayTotal = 0,
+                                fromReplay = false,
+                            )
+                        }
+                    } else {
+                        onPose(timestamp, joints, frameWidth, frameHeight)
+                    }
                 }
-                onPose(timestamp, joints, frameWidth, frameHeight)
             }
         }
         scope.launch {
             val loaded = store.load()
             serverBase = loaded.serverUrl
-            detector.updateConfig(loaded.fallConfig)
-            poseScorer.update(loaded.fallConfig.modelEnabled)
-            lyingStill.updateConfig(loaded.fallConfig)
+            analysis.updateConfig(loaded.fallConfig)
+            testAnalysis.updateConfig(loaded.fallConfig)
             val route = routeFor(loaded.phase)
             _state.value = loaded.copy(ready = true, route = route, serverUrl = loaded.serverUrl)
             refreshBattery()
@@ -262,9 +304,8 @@ class AppContainer(private val app: Context) {
     ): String? {
         val url = ServerUrl.normalize(serverRaw) ?: return "서버 주소 형식을 확인해 주세요."
         serverBase = url
-        detector.updateConfig(config)
-        poseScorer.update(config.modelEnabled)
-        lyingStill.updateConfig(config)
+        analysis.updateConfig(config)
+        testAnalysis.updateConfig(config)
         val lensChanged = front != _state.value.cameraFacingFront
         _state.update {
             it.copy(
@@ -366,7 +407,7 @@ class AppContainer(private val app: Context) {
         service = null
         serviceRunning = false
         heartbeatJob?.cancel()
-        if (_state.value.route != Route.Camera) camera.stop()
+        if (!cameraKeptAlive()) camera.stop()
     }
 
     fun refreshBattery() {
@@ -383,7 +424,7 @@ class AppContainer(private val app: Context) {
         val current = _state.value
         val center = joints?.let { torsoCenter(it, current.fallConfig.minVisibility) }
         if (current.route == Route.Camera) {
-            if (center == null || joints == null) {
+            if (joints == null || center == null) {
                 if (current.personVisible || current.poseLandmarks.isNotEmpty()) {
                     _state.update { it.copy(personVisible = false, poseLandmarks = emptyList()) }
                 }
@@ -402,19 +443,14 @@ class AppContainer(private val app: Context) {
         } else if (current.personVisible || current.poseLandmarks.isNotEmpty()) {
             _state.update { it.copy(personVisible = false, poseLandmarks = emptyList()) }
         }
-        if (current.phase == Phase.WATCHING) {
-            val rule = joints != null && detector.onJointArray(timestampMs, joints)
-            val model = poseScorer.onFrame(timestampMs, joints)
-            val lying = lyingStill.onJointArray(timestampMs, joints)
+        if (current.phase == Phase.WATCHING && current.route != Route.ModelTest) {
             // Rule, pose model, or lying-still. The countdown and the API body stay the same.
-            if (rule || model || lying) beginCountdown(isTest = false)
+            if (analysis.onFrame(timestampMs, joints).suspected) beginCountdown(isTest = false)
         }
     }
 
     private fun resetDetectors() {
-        detector.reset()
-        poseScorer.reset()
-        lyingStill.reset()
+        analysis.reset()
     }
 
     private fun beginCountdown(isTest: Boolean) {
@@ -528,6 +564,7 @@ class AppContainer(private val app: Context) {
     }
 
     private suspend fun sendHeartbeat() {
+        if (_state.value.route == Route.ModelTest) return
         refreshBattery()
         val current = _state.value
         if (current.deviceToken.isBlank() && !current.demoOffline) return
@@ -547,6 +584,7 @@ class AppContainer(private val app: Context) {
     }
 
     private suspend fun flushFalls() {
+        if (_state.value.route == Route.ModelTest) return
         val now = System.currentTimeMillis()
         val current = _state.value
         if (current.pendingFalls.isEmpty()) return
@@ -598,7 +636,7 @@ class AppContainer(private val app: Context) {
 
     private fun stopService() {
         app.stopService(Intent(app, FallDetectionService::class.java))
-        if (_state.value.route != Route.Camera) camera.stop()
+        if (!cameraKeptAlive()) camera.stop()
     }
 
     private fun bringActivityForward() {
@@ -619,6 +657,168 @@ class AppContainer(private val app: Context) {
         val percent = if (level >= 0) (level * 100) / scale else -1
         val charging = status == BatteryManager.BATTERY_STATUS_CHARGING || status == BatteryManager.BATTERY_STATUS_FULL
         return percent to charging
+    }
+
+    fun openModelTest() {
+        val current = _state.value
+        if (current.phase == Phase.COUNTDOWN || current.phase == Phase.SENT) return
+        if (!hasCameraPermission()) {
+            _state.update { it.copy(cameraError = "카메라 권한이 필요해요") }
+            return
+        }
+        stopReplay()
+        synchronized(testLock) {
+            testAnalysis.updateConfig(current.fallConfig)
+            testAnalysis.reset()
+            testFps.reset()
+        }
+        _modelTest.value = ModelTestUi(
+            snapshot = FallDebugSnapshot.initial(current.fallConfig),
+            events = testLog.snapshot(),
+            counts = testLog.counts(),
+        )
+        _state.update { it.copy(route = Route.ModelTest, cameraError = null, errorMessage = null) }
+        camera.setLens(current.cameraFacingFront)
+        camera.start()
+    }
+
+    fun closeModelTest() {
+        stopReplay()
+        _state.update { it.copy(route = Route.Settings, personVisible = false, poseLandmarks = emptyList()) }
+        if (!cameraKeptAlive()) camera.stop()
+    }
+
+    fun clearModelTestLog() {
+        testLog.clear()
+        _modelTest.update { it.copy(events = emptyList(), counts = SignalCounts(), lastFireLine = null) }
+    }
+
+    fun shareModelTestLog(context: Context) {
+        val csv = formatWouldTriggerCsv(testLog.snapshot(), testLog.counts())
+        val error = shareCacheFile(
+            context,
+            "naksang-model-test.csv",
+            "text/csv",
+            csv,
+            "테스트 기록 보내기",
+        )
+        if (error != null) _modelTest.update { it.copy(replayError = error) }
+    }
+
+    fun replayModelTestVideo(uri: Uri) {
+        if (_state.value.route != Route.ModelTest) return
+        val generation = replayGeneration.incrementAndGet()
+        replayJob?.cancel()
+        replayBusy.set(true)
+        synchronized(testLock) { testAnalysis.reset() }
+        _modelTest.update {
+            it.copy(replayRunning = true, replayError = null, replayIndex = 0, replayTotal = 0)
+        }
+        replayJob = scope.launch(Dispatchers.Default) {
+            val error = try {
+                VideoFrameDecoder(app).decode(
+                    uri = uri,
+                    cancelled = { generation != replayGeneration.get() },
+                ) { frame ->
+                    if (generation != replayGeneration.get()) {
+                        frame.bitmap.recycle()
+                        return@decode
+                    }
+                    val width = frame.bitmap.width
+                    val height = frame.bitmap.height
+                    val joints = synchronized(poseLock) {
+                        val read = poseReader.read(frame.bitmap)
+                        frame.bitmap.recycle()
+                        read
+                    }
+                    if (generation != replayGeneration.get()) return@decode
+                    onTestFrame(
+                        timestampMs = frame.timestampMs,
+                        joints = joints,
+                        frameWidth = width,
+                        frameHeight = height,
+                        videoOffsetMs = frame.timestampMs,
+                        replayIndex = frame.index,
+                        replayTotal = frame.total,
+                        fromReplay = true,
+                    )
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.e(TAG, "replay", e)
+                "영상을 열지 못했어요"
+            }
+            if (generation == replayGeneration.get()) {
+                _modelTest.update { it.copy(replayRunning = false, replayError = error) }
+            }
+        }.also { job ->
+            job.invokeOnCompletion {
+                if (generation == replayGeneration.get()) {
+                    replayBusy.set(false)
+                    synchronized(testLock) { testAnalysis.reset() }
+                    _modelTest.update { state -> state.copy(replayRunning = false) }
+                }
+            }
+        }
+    }
+
+    fun stopModelReplay() {
+        stopReplay()
+    }
+
+    private fun stopReplay() {
+        replayGeneration.incrementAndGet()
+        replayJob?.cancel()
+        synchronized(testLock) { testAnalysis.reset() }
+        replayBusy.set(false)
+        _modelTest.update { it.copy(replayRunning = false) }
+    }
+
+    private fun onTestFrame(
+        timestampMs: Long,
+        joints: Array<FloatArray>?,
+        frameWidth: Int,
+        frameHeight: Int,
+        videoOffsetMs: Long?,
+        replayIndex: Int,
+        replayTotal: Int,
+        fromReplay: Boolean,
+    ) {
+        val now = System.currentTimeMillis()
+        val next = synchronized(testLock) {
+            val frame = testAnalysis.onFrame(timestampMs, joints)
+            val events = wouldTriggerEvents(now, videoOffsetMs, frame.debug)
+            if (events.isNotEmpty()) testLog.addAll(events)
+            val previous = _modelTest.value
+            val fps = if (fromReplay) previous.fps else testFps.mark(timestampMs)
+            val lastFire = if (events.isEmpty()) {
+                previous.lastFireLine
+            } else {
+                val names = events.joinToString(" · ") { it.signal.korean() }
+                "최근 발화 · $names · ${formatEventClock(events.first())}"
+            }
+            previous.copy(
+                snapshot = frame.debug,
+                landmarks = joints?.toJointPoints().orEmpty(),
+                frameWidth = frameWidth,
+                frameHeight = frameHeight,
+                fps = fps,
+                events = testLog.snapshot(),
+                counts = testLog.counts(),
+                replayRunning = fromReplay,
+                replayIndex = if (fromReplay) replayIndex else previous.replayIndex,
+                replayTotal = if (fromReplay) replayTotal else previous.replayTotal,
+                liveLine = liveTriggerLine(frame.debug.wouldFire),
+                lastFireLine = lastFire,
+            )
+        }
+        _modelTest.value = next
+    }
+
+    private fun cameraKeptAlive(): Boolean {
+        val route = _state.value.route
+        return serviceRunning || route == Route.Camera || route == Route.ModelTest
     }
 
     private fun fail(message: String) {
