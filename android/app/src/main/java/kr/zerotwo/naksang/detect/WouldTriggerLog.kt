@@ -27,8 +27,9 @@ data class SignalCounts(
     val model: Int = 0,
     val lyingStill: Int = 0,
     val fastFlatten: Int = 0,
+    val alertStage: Int = 0,
 ) {
-    val total: Int get() = rule + viewDirection + model + lyingStill + fastFlatten
+    val total: Int get() = rule + viewDirection + model + lyingStill + fastFlatten + alertStage
 
     operator fun plus(signal: DetectSignal): SignalCounts = when (signal) {
         DetectSignal.RULE -> copy(rule = rule + 1)
@@ -36,6 +37,7 @@ data class SignalCounts(
         DetectSignal.MODEL -> copy(model = model + 1)
         DetectSignal.LYING_STILL -> copy(lyingStill = lyingStill + 1)
         DetectSignal.FAST_FLATTEN -> copy(fastFlatten = fastFlatten + 1)
+        DetectSignal.ALERT_STAGE -> copy(alertStage = alertStage + 1)
     }
 }
 
@@ -107,6 +109,21 @@ fun formatEventClock(event: WouldTriggerEvent, zone: ZoneId = ZoneId.systemDefau
     return String.format(Locale.KOREA, "%02d:%02d:%02d", time.hour, time.minute, time.second)
 }
 
+/** One model-test row for the moment the local 30s clock ends. Nothing is sent. */
+fun alertStageEvent(atEpochMs: Long): WouldTriggerEvent = WouldTriggerEvent(
+    atEpochMs = atEpochMs,
+    videoOffsetMs = null,
+    signal = DetectSignal.ALERT_STAGE,
+    posture = PostureLabel.NONE,
+    torsoAngleDeg = null,
+    modelScore = 0.0,
+    modelThreshold = 0.0,
+    lyingElapsedMs = 0,
+    lyingThresholdMs = 0,
+    poseConfidence = null,
+    personDetected = false,
+)
+
 fun formatWouldTriggerCsv(
     events: List<WouldTriggerEvent>,
     counts: SignalCounts,
@@ -116,10 +133,10 @@ fun formatWouldTriggerCsv(
     val builder = StringBuilder()
     builder.append("# 낙상제로 모델 테스트\n")
     builder.append(
-        "# 규칙 ${counts.rule}, 시선방향 ${counts.viewDirection}, 포즈모델 ${counts.model}, 바닥에누움 ${counts.lyingStill}, 빠른눕힘 ${counts.fastFlatten}\n",
+        "# 규칙 ${counts.rule}, 시선방향 ${counts.viewDirection}, 포즈모델 ${counts.model}, 바닥에누움 ${counts.lyingStill}, 빠른눕힘 ${counts.fastFlatten}, 알림단계 ${counts.alertStage}\n",
     )
     builder.append(
-        "time,signal,posture,torso_angle_deg,model_score,model_threshold,lying_elapsed_s,lying_threshold_s,pose_confidence,person,video_offset_ms\n",
+        "time,signal,posture,torso_angle_deg,model_score,model_threshold,lying_elapsed_s,lying_threshold_s,pose_confidence,person,video_offset_ms,note\n",
     )
     for (event in events) {
         val time = clock.format(Instant.ofEpochMilli(event.atEpochMs))
@@ -144,6 +161,8 @@ fun formatWouldTriggerCsv(
         builder.append(if (event.personDetected) "1" else "0")
         builder.append(',')
         builder.append(event.videoOffsetMs?.toString().orEmpty())
+        builder.append(',')
+        if (event.signal == DetectSignal.ALERT_STAGE) builder.append(ALERT_STAGE_NOTE)
         builder.append('\n')
     }
     return builder.toString()

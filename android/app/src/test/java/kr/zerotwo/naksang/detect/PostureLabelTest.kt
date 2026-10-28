@@ -1,6 +1,7 @@
 package kr.zerotwo.naksang.detect
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Test
 
 class PostureLabelTest {
@@ -46,5 +47,29 @@ class PostureLabelTest {
             "이번 프레임에 발화할 조건 · 규칙 · 시선 방향",
             liveTriggerLine(linkedSetOf(DetectSignal.RULE, DetectSignal.VIEW_DIRECTION)),
         )
+    }
+
+    @Test
+    fun `누움 시계는 9초와 45초와 해당 없음을 보여 준다`() {
+        val idle = FallDebugSnapshot.initial()
+        assertEquals("해당 없음", lyingRouteLabel(idle))
+        assertNull(lyingRemainMs(idle))
+        val fast = idle.copy(
+            lyingCounting = true,
+            lyingWitnessedFast = true,
+            lyingElapsedMs = 1_200,
+            lyingThresholdMs = 9_000,
+        )
+        assertEquals("빠르게 눕는 걸 봄: 9초", lyingRouteLabel(fast))
+        assertEquals(7_800L, lyingRemainMs(fast))
+        val slow = idle.copy(
+            lyingCounting = true,
+            lyingWitnessedFast = false,
+            lyingElapsedMs = 5_000,
+            lyingThresholdMs = 45_000,
+            lyingUnwitnessedMs = 45_000,
+        )
+        assertEquals("못 봄: 45초", lyingRouteLabel(slow))
+        assertEquals(40_000L, lyingRemainMs(slow))
     }
 }

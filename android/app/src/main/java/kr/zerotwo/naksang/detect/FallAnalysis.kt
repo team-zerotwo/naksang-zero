@@ -50,14 +50,18 @@ class FallAnalysis(config: FallConfig = FallConfig()) {
         if (model.fired) wouldFire.add(DetectSignal.MODEL)
         if (lie.fired) wouldFire.add(DetectSignal.LYING_STILL)
         if (fastHit) wouldFire.add(DetectSignal.FAST_FLATTEN)
-        val posture = postureLabel(
-            measured = rule.measured,
-            torsoAngleDeg = rule.angleDeg,
-            hipY = rule.hipY,
-            kneeY = rule.kneeY,
-            lieAngleDeg = cfg.maxLieAngleDeg,
-            highAngleDeg = cfg.lyingHighAngleDeg,
-        )
+        val posture = if (lie.auxiliary) {
+            PostureLabel.LYING
+        } else {
+            postureLabel(
+                measured = rule.measured,
+                torsoAngleDeg = rule.angleDeg,
+                hipY = rule.hipY,
+                kneeY = rule.kneeY,
+                lieAngleDeg = cfg.maxLieAngleDeg,
+                highAngleDeg = cfg.lyingHighAngleDeg,
+            )
+        }
         val snapshot = FallDebugSnapshot(
             personDetected = joints != null,
             posture = posture,
@@ -81,6 +85,8 @@ class FallAnalysis(config: FallConfig = FallConfig()) {
             ruleStillElapsedMs = rule.stillElapsedMs,
             ruleStillNeedMs = rule.stillNeedMs,
             wouldFire = wouldFire,
+            lyingAuxiliary = lie.auxiliary,
+            lyingFastMs = cfg.lyingStillMs,
         )
         return FallFrame(
             suspected = ruleHit || modelHit || lyingHit || fastHit,

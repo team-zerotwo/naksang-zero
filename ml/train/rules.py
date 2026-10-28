@@ -402,13 +402,50 @@ class FastFlat:
         return now - self.confirm >= 2_000
 
 
+# Matches LyingStillDetector's along-camera supine path. The 9s/45s clock
+# stays in Kotlin; this class only measures the longest still stretch.
+SUPINE_LEN_RATIO = f32(0.50)
+SUPINE_SHAPE_RATIO = f32(0.50)
+SUPINE_ABS_SHAPE = f32(0.55)
+SUPINE_LEG_BAND = f32(0.10)
+SUPINE_LEG_SHOULDER = f32(0.80)
+MIN_SHOULDER = f32(0.04)
+
+
+def _shoulder_width(assembled):
+    left = assembled.get(LS)
+    right = assembled.get(RS)
+    if left is None or right is None or left[2] < 0.5 or right[2] < 0.5:
+        return None
+    width = _hypot32(float(left[0]) - float(right[0]), float(left[1]) - float(right[1]))
+    if width < float(MIN_SHOULDER):
+        return None
+    return width
+
+
+def _legs_near_hips(pose: Sample, width: float) -> bool:
+    if pose.knee_y is None or pose.ankle_y is None:
+        return False
+    band = max(float(SUPINE_LEG_BAND), float(width) * float(SUPINE_LEG_SHOULDER))
+    return abs(float(pose.knee_y) - float(pose.hip_y)) <= band and abs(float(pose.ankle_y) - float(pose.hip_y)) <= band
+
+
 class LyingHold:
-    """Longest still floor-lying stretch. Does not fire the 9 second alert."""
+    """Longest still floor-lying stretch. Does not fire the 9 second alert.
+
+    Lying includes the flat-angle pose and a steep torso that has shortened
+    against the recent upright torso (and against shoulder width) while the
+    knees and ankles sit near the hips. The second case is someone lying
+    straight at the camera. It does not treat walking away, sitting, or a
+    squat as lying, and it does not skip the stillness clock.
+    """
 
     def __init__(self):
         self.tracked = _Tracker()
         self.saw_upright = False
         self.upright_cy = f32(0)
+        self.upright_torso = f32(0)
+        self.upright_shoulder = f32(0)
         self.last_upright = None
         self.last_high = None
         self.lying_since = None
@@ -429,7 +466,35 @@ class LyingHold:
                 assembled[index] = point
         if not any_live:
             return None
-        return pose_measure(assembled, 0.5)
+        pose = pose_measure(assembled, 0.5)
+        if pose is None:
+            return None
+        return pose, _shoulder_width(assembled)
+
+    def _note_standing(self, pose: Sample, width):
+        if width is None or width < float(MIN_SHOULDER) or pose.torso < float(MIN_TORSO):
+            return
+        if self.upright_torso <= 0 or self.upright_shoulder < float(MIN_SHOULDER):
+            self.upright_torso = pose.torso
+            self.upright_shoulder = width
+            return
+        if pose.torso < f32(float(self.upright_torso) * 0.85):
+            return
+        self.upright_torso = f32(0.9 * float(self.upright_torso) + 0.1 * float(pose.torso))
+        self.upright_shoulder = f32(0.9 * float(self.upright_shoulder) + 0.1 * float(width))
+
+    def _supine(self, pose: Sample, width) -> bool:
+        if width is None or not _legs_near_hips(pose, width):
+            return False
+        shape = float(pose.torso) / float(width)
+        if self.upright_torso >= float(MIN_TORSO) and self.upright_shoulder >= float(MIN_SHOULDER):
+            upright_shape = float(self.upright_torso) / float(self.upright_shoulder)
+            if upright_shape <= 0:
+                return False
+            len_ratio = float(pose.torso) / float(self.upright_torso)
+            shape_ratio = shape / upright_shape
+            return len_ratio <= float(SUPINE_LEN_RATIO) and shape_ratio <= float(SUPINE_SHAPE_RATIO)
+        return shape <= float(SUPINE_ABS_SHAPE)
 
     def _note_hold(self, t):
         if self.lying_since is None:
@@ -437,19 +502,24 @@ class LyingHold:
         self.max_ms = max(self.max_ms, t - self.lying_since)
 
     def on_frame(self, t, frame):
-        pose = self._measure(t, frame) if frame is not None else None
-        if pose is None:
+        measured = self._measure(t, frame) if frame is not None else None
+        if measured is None:
             if self.last_good is not None and t - self.last_good > GRACE:
                 self.lying_since = None
                 if t - self.last_good > 20_000:
                     self.saw_upright = False
                     self.last_upright = None
                     self.last_high = None
+                    self.upright_torso = f32(0)
+                    self.upright_shoulder = f32(0)
             return
+        pose, width = measured
         self.last_good = t
-        if pose.angle >= f32(72):
+        supine = self._supine(pose, width)
+        if not supine and pose.angle >= f32(72):
             self.last_high = t
-        if pose.angle >= f32(50):
+        if not supine and pose.angle >= f32(50):
+            self._note_standing(pose, width)
             self.saw_upright = True
             self.upright_cy = pose.cy
             self.last_upright = t
@@ -457,7 +527,7 @@ class LyingHold:
             return
         low = pose.cy >= f32(0.45)
         dropped = self.saw_upright and pose.cy - self.upright_cy >= f32(0.08)
-        lying = pose.angle <= f32(45) and (low or dropped)
+        lying = (pose.angle <= f32(45) and (low or dropped)) or supine
         if not lying:
             self.lying_since = None
             return
@@ -580,6 +650,33 @@ def _self_check() -> None:
         raise SystemExit(f"fast-flat missed: {fast}")
     if fast_fire_ms({"frames": _hold(stand, lying, 1000, 8000, 12000, 200)}) is not None:
         raise SystemExit("slow lie fired fast-flat")
+
+    def _body(points):
+        joints = [[0.0, 0.0, 0.0] for _ in range(33)]
+        names = (LS, RS, LH, RH, LK, RK, LA, RA)
+        for index, point in zip(names, points):
+            joints[index] = [point[0], point[1], 1.0]
+        return joints
+
+    stand_full = _body((
+        (0.42, 0.18), (0.58, 0.18), (0.44, 0.46), (0.56, 0.46),
+        (0.43, 0.68), (0.57, 0.68), (0.42, 0.90), (0.58, 0.90),
+    ))
+    supine = _body((
+        (0.40, 0.50), (0.60, 0.50), (0.46, 0.56), (0.54, 0.56),
+        (0.48, 0.58), (0.52, 0.58), (0.47, 0.60), (0.53, 0.60),
+    ))
+    sitting = _body((
+        (0.40, 0.36), (0.60, 0.36), (0.47, 0.44), (0.53, 0.44),
+        (0.36, 0.70), (0.64, 0.70), (0.34, 0.88), (0.66, 0.88),
+    ))
+    supine_hold = lying_hold_ms({"frames": _hold(stand_full, supine, 1000, 1600, 8000, 200)})
+    if supine_hold < 2_000:
+        raise SystemExit(f"supine along the camera was not lying: {supine_hold}")
+    if lying_hold_ms({"frames": _hold(stand_full, sitting, 1000, 2200, 8000, 200)}) != 0:
+        raise SystemExit("sitting counted as lying")
+    if lying_hold_ms({"frames": _hold(stand_full, stand_full, 1000, 1600, 4000, 200)}) != 0:
+        raise SystemExit("standing counted as lying")
     print("rules self-check ok", flush=True)
 
 

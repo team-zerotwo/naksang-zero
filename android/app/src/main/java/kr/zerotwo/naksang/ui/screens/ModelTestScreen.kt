@@ -15,6 +15,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -55,7 +56,10 @@ import kr.zerotwo.naksang.detect.DetectSignal
 import kr.zerotwo.naksang.detect.FallDebugSnapshot
 import kr.zerotwo.naksang.detect.formatEventClock
 import kr.zerotwo.naksang.detect.formatSeconds
+import kr.zerotwo.naksang.detect.lyingClockActive
 import kr.zerotwo.naksang.detect.lyingPathStatus
+import kr.zerotwo.naksang.detect.lyingRemainMs
+import kr.zerotwo.naksang.detect.lyingRouteLabel
 import kr.zerotwo.naksang.detect.modelPathStatus
 import kr.zerotwo.naksang.detect.rulePathStatus
 import kr.zerotwo.naksang.session.ModelTestUi
@@ -110,11 +114,13 @@ fun ModelTestScreen(
         return
     }
 
-    Column(
+    BoxWithConstraints(
         Modifier
             .fillMaxSize()
             .background(NaksangColors.Bg),
     ) {
+        val panelMax = maxHeight * 0.34f
+        Column(Modifier.fillMaxSize()) {
         TestPreview(
             ui = ui,
             mirrorX = mirrorX,
@@ -122,22 +128,34 @@ fun ModelTestScreen(
             onPreviewReady = onPreviewReady,
             onPreviewGone = onPreviewGone,
             onBack = onBack,
+            modifier = Modifier.weight(1f).fillMaxWidth(),
         )
         Column(
             Modifier
-                .weight(1f)
                 .fillMaxWidth()
+                .heightIn(max = panelMax)
                 .background(NaksangColors.Bg)
                 .verticalScroll(rememberScrollState())
                 .navigationBarsPadding()
-                .padding(horizontal = 24.dp, vertical = 16.dp),
+                .padding(horizontal = 24.dp, vertical = 12.dp),
         ) {
             DisplayText("모델 테스트", 28.sp)
+            val banner = alertBanner(ui)
+            if (banner != null) {
+                Text(
+                    banner,
+                    color = NaksangColors.Warn,
+                    fontFamily = Pretendard,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 16.sp,
+                    modifier = Modifier.padding(top = 8.dp),
+                )
+            }
             Text(
                 if (demoOffline) {
-                    "오프라인 데모가 켜져 있어요. 이 화면은 서버로 보내지 않고, 30초 알림도 시작하지 않아요."
+                    "오프라인 데모가 켜져 있어요. 이 화면은 서버로 보내지 않아요. 감지가 되면 30초를 세고, 끝나면 알림 단계만 표시해요."
                 } else {
-                    "이 화면은 서버로 보내지 않아요. 30초 알림도 시작하지 않아요. 감시 중이었다면 이 화면을 보는 동안만 잠시 쉬어요."
+                    "이 화면은 서버로 보내지 않아요. 감지가 되면 30초를 세고, 끝나면 알림 단계만 표시해요. 보호자에게는 가지 않아요."
                 },
                 color = NaksangColors.Sub,
                 fontFamily = Pretendard,
@@ -146,6 +164,12 @@ fun ModelTestScreen(
             )
             Text(
                 "폰 방향: ${PhoneOrientation.label(ui.phoneOrientation)}",
+                color = NaksangColors.Sub,
+                fontFamily = Pretendard,
+                fontSize = 15.sp,
+            )
+            Text(
+                "렌즈: ${ui.lensLabel}",
                 color = NaksangColors.Sub,
                 fontFamily = Pretendard,
                 fontSize = 15.sp,
@@ -213,11 +237,11 @@ fun ModelTestScreen(
 
             SectionLabel("바닥에 가만히 누움")
             val lie = ui.snapshot
-            MetricRow(
-                "경과",
-                "${formatSeconds(lie.lyingElapsedMs)}초 / ${formatSeconds(lie.lyingThresholdMs)}초",
-            )
+            MetricRow("기준", lyingRouteLabel(lie))
+            MetricRow("경과", lyingElapsedLabel(lie))
+            MetricRow("남음", lyingRemainLabel(lie))
             MetricRow("상태", lyingPathStatus(lie.lyingEnabled, DetectSignal.LYING_STILL in lie.wouldFire, lie.lyingCounting))
+            MetricRow("판정", lyingReasonLabel(lie))
             Text(
                 lyingHint(lie),
                 color = NaksangColors.Sub,
@@ -286,7 +310,7 @@ fun ModelTestScreen(
 
             SectionLabel("발화 횟수")
             Text(
-                "규칙 ${ui.counts.rule} · 시선 방향 ${ui.counts.viewDirection} · 포즈 모델 ${ui.counts.model} · 빠른 눕힘 ${ui.counts.fastFlatten} · 바닥에 누움 ${ui.counts.lyingStill}",
+                "규칙 ${ui.counts.rule} · 시선 방향 ${ui.counts.viewDirection} · 포즈 모델 ${ui.counts.model} · 빠른 눕힘 ${ui.counts.fastFlatten} · 바닥에 누움 ${ui.counts.lyingStill} · 알림 단계 ${ui.counts.alertStage}",
                 color = NaksangColors.Text,
                 fontFamily = Pretendard,
                 fontWeight = FontWeight.Bold,
@@ -313,17 +337,19 @@ fun ModelTestScreen(
                     Column(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
                         Text(
                             "${formatEventClock(event)}  ${event.signal.korean()}",
-                            color = NaksangColors.Text,
+                            color = if (event.signal == DetectSignal.ALERT_STAGE) NaksangColors.Warn else NaksangColors.Text,
                             fontFamily = Pretendard,
                             fontWeight = FontWeight.Bold,
                             fontSize = 16.sp,
                         )
-                        Text(
-                            eventDetail(event),
-                            color = NaksangColors.Sub,
-                            fontFamily = Pretendard,
-                            fontSize = 15.sp,
-                        )
+                        if (event.signal != DetectSignal.ALERT_STAGE) {
+                            Text(
+                                eventDetail(event),
+                                color = NaksangColors.Sub,
+                                fontFamily = Pretendard,
+                                fontSize = 15.sp,
+                            )
+                        }
                     }
                     RowDivider()
                 }
@@ -368,6 +394,7 @@ fun ModelTestScreen(
             )
             Spacer(Modifier.height(12.dp))
         }
+        }
     }
 }
 
@@ -379,11 +406,10 @@ private fun TestPreview(
     onPreviewReady: (androidx.camera.core.Preview.SurfaceProvider, ViewPort?) -> Unit,
     onPreviewGone: () -> Unit,
     onBack: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     Box(
-        Modifier
-            .fillMaxWidth()
-            .height(260.dp)
+        modifier
             .clipToBounds()
             .background(NaksangColors.Text),
     ) {
@@ -459,6 +485,46 @@ private fun TestPreview(
                 fontSize = 15.sp,
             )
         }
+        Column(
+            Modifier
+                .align(Alignment.BottomStart)
+                .fillMaxWidth()
+                .background(Color.Black.copy(alpha = 0.55f))
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+        ) {
+            Text(
+                previewStatusLine(ui),
+                color = Color.White,
+                fontFamily = Pretendard,
+                fontWeight = FontWeight.Bold,
+                fontSize = 15.sp,
+            )
+            Text(
+                previewClockLine(ui),
+                color = Color.White,
+                fontFamily = Pretendard,
+                fontSize = 14.sp,
+                modifier = Modifier.padding(top = 2.dp),
+            )
+            Text(
+                ui.lensLabel,
+                color = Color.White,
+                fontFamily = Pretendard,
+                fontSize = 13.sp,
+                modifier = Modifier.padding(top = 2.dp),
+            )
+            val banner = alertBanner(ui)
+            if (banner != null) {
+                Text(
+                    banner,
+                    color = Color(0xFFFFE08A),
+                    fontFamily = Pretendard,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 14.sp,
+                    modifier = Modifier.padding(top = 4.dp),
+                )
+            }
+        }
     }
 }
 
@@ -524,8 +590,8 @@ private fun ScoreBar(score: Double, threshold: Double) {
 /**
  * FILL_CENTER scales the camera image past the view and crops it. On some
  * phones the texture ignores the parent clip and paints over the text under
- * the 260dp box. An outline clip keeps the texture, the skeleton, and the
- * top bar inside that box.
+ * the preview. An outline clip keeps the texture, the skeleton, and the
+ * bars inside the preview box.
  */
 private fun PreviewView.keepPreviewInsideBounds() {
     clipChildren = true
@@ -573,14 +639,50 @@ private fun fpsText(measured: Float, configured: Int, replay: Boolean): String {
 }
 
 private fun lyingHint(snapshot: FallDebugSnapshot): String {
-    val slow = formatSeconds(snapshot.lyingUnwitnessedMs)
-    val fast = formatSeconds(snapshot.lyingThresholdMs)
+    val slow = wholeLabel(snapshot.lyingUnwitnessedMs)
+    val fast = wholeLabel(snapshot.lyingFastMs)
     return when {
         !snapshot.lyingEnabled -> "설정에서 꺼져 있어요. 이 경로는 발화하지 않아요."
-        snapshot.lyingCounting && snapshot.lyingWitnessedFast -> "빠른 하강 기준 ${fast}초를 세고 있어요."
-        snapshot.lyingCounting -> "천천히 눕거나 이미 누워 있어서 ${slow}초 기준이에요."
-        else -> "빠른 하강은 ${formatSeconds(snapshot.lyingThresholdMs)}초, 그렇지 않으면 ${slow}초를 기다려요."
+        else -> "빠르게 눕는 걸 보면 ${fast}초, 못 보면 ${slow}초를 기다려요. 지금은 ${lyingRouteLabel(snapshot)}."
     }
+}
+
+private fun lyingElapsedLabel(snapshot: FallDebugSnapshot): String {
+    if (!lyingClockActive(snapshot)) return "—"
+    return "${formatSeconds(snapshot.lyingElapsedMs)}초"
+}
+
+private fun lyingRemainLabel(snapshot: FallDebugSnapshot): String {
+    val remain = lyingRemainMs(snapshot) ?: return "—"
+    return "${formatSeconds(remain)}초"
+}
+
+private fun lyingReasonLabel(snapshot: FallDebugSnapshot): String {
+    if (!lyingClockActive(snapshot)) return "—"
+    return if (snapshot.lyingAuxiliary) "몸통이 짧고 다리가 올라옴" else "몸통 각도"
+}
+
+private fun previewStatusLine(ui: ModelTestUi): String {
+    val reason = if (ui.snapshot.lyingAuxiliary && lyingClockActive(ui.snapshot)) " · 짧은 몸통" else ""
+    return "${lyingRouteLabel(ui.snapshot)} · 몸통 ${angleText(ui.snapshot.torsoAngleDeg)}$reason"
+}
+
+private fun previewClockLine(ui: ModelTestUi): String {
+    return "경과 ${lyingElapsedLabel(ui.snapshot)} · 남음 ${lyingRemainLabel(ui.snapshot)}"
+}
+
+private fun alertBanner(ui: ModelTestUi): String? {
+    val left = ui.alertCountdownMs
+    if (left != null) {
+        val seconds = ((left + 999L) / 1000L).toInt()
+        return "테스트 카운트다운 ${seconds}초 · 끝나면 알림 단계만 표시해요"
+    }
+    return ui.alertStageLine
+}
+
+private fun wholeLabel(ms: Long): String {
+    if (ms % 1000L == 0L) return (ms / 1000L).toString()
+    return formatSeconds(ms)
 }
 
 private fun eventDetail(event: kr.zerotwo.naksang.detect.WouldTriggerEvent): String {

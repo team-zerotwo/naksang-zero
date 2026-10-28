@@ -58,12 +58,23 @@ class WouldTriggerLogTest {
         val csv = formatWouldTriggerCsv(listOf(event), SignalCounts(rule = 1), ZoneId.of("Asia/Seoul"))
         val lines = csv.lines()
         assertEquals("# 낙상제로 모델 테스트", lines[0])
-        assertEquals("# 규칙 1, 시선방향 0, 포즈모델 0, 바닥에누움 0, 빠른눕힘 0", lines[1])
+        assertEquals("# 규칙 1, 시선방향 0, 포즈모델 0, 바닥에누움 0, 빠른눕힘 0, 알림단계 0", lines[1])
         assertEquals(
-            "time,signal,posture,torso_angle_deg,model_score,model_threshold,lying_elapsed_s,lying_threshold_s,pose_confidence,person,video_offset_ms",
+            "time,signal,posture,torso_angle_deg,model_score,model_threshold,lying_elapsed_s,lying_threshold_s,pose_confidence,person,video_offset_ms,note",
             lines[2],
         )
-        assertEquals("1970-01-01 09:00:00,rule,lying,12.3,0.500,0.990,1.5,9.0,,1,", lines[3])
+        assertEquals("1970-01-01 09:00:00,rule,lying,12.3,0.500,0.990,1.5,9.0,,1,,", lines[3])
+    }
+
+    @Test
+    fun `알림 단계 도달은 기록과 내보내기에 남는다`() {
+        val event = alertStageEvent(0L)
+        assertEquals(ALERT_STAGE_NOTE, event.signal.korean())
+        assertEquals("alert_stage", event.signal.code())
+        val csv = formatWouldTriggerCsv(listOf(event), SignalCounts(alertStage = 1), ZoneId.of("Asia/Seoul"))
+        assertTrue(csv.contains("알림단계 1"))
+        assertTrue(csv.contains("alert_stage"))
+        assertTrue(csv.contains(ALERT_STAGE_NOTE))
     }
 
     @Test

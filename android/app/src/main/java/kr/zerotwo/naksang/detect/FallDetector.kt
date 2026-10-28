@@ -143,6 +143,28 @@ data class FallConfig(
     val lyingMinDrop: Float = 0.08f,
     /** At or above this torso angle the person is upright, sitting, or kneeling, not lying. */
     val lyingUprightAngleDeg: Float = 50f,
+    /**
+     * Supine pose pointing along the camera axis. The torso angle stays steep,
+     * so [lyingUprightAngleDeg] would otherwise clear the lying clock every frame.
+     * The pose still counts as lying when the torso is at most [supineTorsoLenRatio]
+     * of the recent upright torso length and the shoulder-normalized length is at
+     * most [supineShapeRatio] of the upright ratio (walking away shrinks both the
+     * same way and does not pass), and the knees and ankles sit near the hips.
+     * With no upright sample yet, torso/shoulder at or below [supineAbsShapeRatio]
+     * is enough, together with the same leg check. The 9s/45s clock is unchanged.
+     * This does not fire a fall on the spot. [maxTorsoLenRatio] stays 0.
+     */
+    val supineAuxEnabled: Boolean = true,
+    /** Torso length now / torso length while recently upright. */
+    val supineTorsoLenRatio: Float = 0.50f,
+    /** (torso / shoulder width) now, divided by the same ratio while upright. */
+    val supineShapeRatio: Float = 0.50f,
+    /** Torso / shoulder width when this person has not been seen upright yet. */
+    val supineAbsShapeRatio: Float = 0.55f,
+    /** Knees and ankles must stay within this fraction of the frame of the hip. */
+    val supineLegBand: Float = 0.10f,
+    /** Leg band is at least this many shoulder widths, so a small person is not judged on a fixed fraction. */
+    val supineLegShoulderScale: Float = 0.80f,
 )
 
 /**

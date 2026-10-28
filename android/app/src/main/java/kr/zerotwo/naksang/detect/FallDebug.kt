@@ -11,6 +11,8 @@ enum class DetectSignal {
     MODEL,
     LYING_STILL,
     FAST_FLATTEN,
+    /** Model-test log only. Not a detection and never starts a real alert. */
+    ALERT_STAGE,
     ;
 
     fun korean(): String = when (this) {
@@ -19,6 +21,7 @@ enum class DetectSignal {
         MODEL -> "포즈 모델"
         LYING_STILL -> "바닥에 누움"
         FAST_FLATTEN -> "빠른 눕힘"
+        ALERT_STAGE -> ALERT_STAGE_NOTE
     }
 
     fun code(): String = when (this) {
@@ -27,8 +30,12 @@ enum class DetectSignal {
         MODEL -> "model"
         LYING_STILL -> "lying_still"
         FAST_FLATTEN -> "fast_flatten"
+        ALERT_STAGE -> "alert_stage"
     }
 }
+
+/** Shown on the model-test screen only. Production never sends this. */
+const val ALERT_STAGE_NOTE = "알림 단계에 도달(테스트 화면이라 실제 알림은 보내지 않음)"
 
 /** Read-only view of [FallDetector] after the latest frame. Detection does not read this. */
 data class RulePathDebug(
@@ -51,6 +58,8 @@ data class LyingPathDebug(
     val thresholdMs: Long = 9_000,
     val witnessedFast: Boolean = false,
     val fired: Boolean = false,
+    /** True when the short-torso supine check, not the flat angle, is what counts as lying. */
+    val auxiliary: Boolean = false,
 )
 
 /** Read-only view of [PoseFallScorer] after the latest frame. */
@@ -91,6 +100,10 @@ data class FallDebugSnapshot(
     val ruleStillElapsedMs: Long,
     val ruleStillNeedMs: Long,
     val wouldFire: Set<DetectSignal>,
+    /** Short-torso supine path is the reason this frame counts as lying. */
+    val lyingAuxiliary: Boolean = false,
+    /** Configured fast-descent stillness. Stays 9s when the active clock is the slow path. */
+    val lyingFastMs: Long = 9_000,
 ) {
     companion object {
         fun initial(config: FallConfig = FallConfig()): FallDebugSnapshot = FallDebugSnapshot(
@@ -116,6 +129,8 @@ data class FallDebugSnapshot(
             ruleStillElapsedMs = 0,
             ruleStillNeedMs = config.stillDurationMs,
             wouldFire = emptySet(),
+            lyingAuxiliary = false,
+            lyingFastMs = config.lyingStillMs,
         )
     }
 }
@@ -164,4 +179,37 @@ fun lyingPathStatus(enabled: Boolean, fired: Boolean, counting: Boolean): String
 fun liveTriggerLine(wouldFire: Set<DetectSignal>): String {
     if (wouldFire.isEmpty()) return "이번 프레임에는 발화할 조건이 없어요"
     return "이번 프레임에 발화할 조건 · " + wouldFire.joinToString(" · ") { it.korean() }
+}
+
+/** The lying clock is running, or this frame is the one that finished it. */
+fun lyingClockActive(snapshot: FallDebugSnapshot): Boolean {
+    return snapshot.lyingEnabled &&
+        (snapshot.lyingCounting || DetectSignal.LYING_STILL in snapshot.wouldFire)
+}
+
+/**
+ * Which stillness limit applies right now.
+ * 「해당 없음」 when the person is not in the lying clock.
+ */
+fun lyingRouteLabel(snapshot: FallDebugSnapshot): String {
+    if (!lyingClockActive(snapshot)) return "해당 없음"
+    val seconds = wholeSeconds(snapshot.lyingThresholdMs)
+    return if (snapshot.lyingWitnessedFast) {
+        "빠르게 눕는 걸 봄: ${seconds}초"
+    } else {
+        "못 봄: ${seconds}초"
+    }
+}
+
+/** Milliseconds left on the active lying clock. Null when that clock is not running. */
+fun lyingRemainMs(snapshot: FallDebugSnapshot): Long? {
+    if (!lyingClockActive(snapshot)) return null
+    return (snapshot.lyingThresholdMs - snapshot.lyingElapsedMs).coerceAtLeast(0L)
+}
+
+/** Whole seconds when the value lands on a second, otherwise one decimal. */
+fun wholeSeconds(ms: Long): String {
+    val clamped = ms.coerceAtLeast(0L)
+    if (clamped % 1000L == 0L) return (clamped / 1000L).toString()
+    return formatSeconds(clamped)
 }
