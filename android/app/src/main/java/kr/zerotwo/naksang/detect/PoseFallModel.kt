@@ -9,6 +9,37 @@ import kotlin.math.exp
 object PoseFallModel {
     fun probability(features: DoubleArray): Double {
         if (features.size != PoseFallWeights.MEAN.size || features.isEmpty()) return 0.0
+        val z = standardize(features)
+        val logit = if (PoseFallWeights.KIND == "mlp") mlpLogit(z) else logregLogit(z)
+        return stableSigmoid(logit)
+    }
+
+    /**
+     * Second score, same window. Zero when the tree weights were not exported.
+     * The phone fires when either this or [probability] clears its own threshold.
+     */
+    fun gbdtProbability(features: DoubleArray): Double {
+        if (features.size != PoseFallWeights.MEAN.size || PoseFallWeights.GBDT_TREES == 0) return 0.0
+        val z = standardize(features)
+        var raw = PoseFallWeights.GBDT_INIT
+        val offsets = PoseFallWeights.GBDT_OFFSET
+        for (tree in 0 until PoseFallWeights.GBDT_TREES) {
+            val start = offsets[tree]
+            var node = 0
+            while (PoseFallWeights.GBDT_LEFT[start + node] != -1) {
+                val feature = PoseFallWeights.GBDT_FEATURE[start + node]
+                node = if (z[feature] <= PoseFallWeights.GBDT_NODE_THRESHOLD[start + node]) {
+                    PoseFallWeights.GBDT_LEFT[start + node]
+                } else {
+                    PoseFallWeights.GBDT_RIGHT[start + node]
+                }
+            }
+            raw += PoseFallWeights.GBDT_LEARNING_RATE * PoseFallWeights.GBDT_VALUE[start + node]
+        }
+        return stableSigmoid(raw)
+    }
+
+    private fun standardize(features: DoubleArray): DoubleArray {
         val z = DoubleArray(features.size)
         for (index in features.indices) {
             val scale = if (PoseFallWeights.STD[index] < 1e-8) 1.0 else PoseFallWeights.STD[index]
@@ -17,8 +48,7 @@ object PoseFallModel {
             if (value < -8.0) value = -8.0
             z[index] = value
         }
-        val logit = if (PoseFallWeights.KIND == "mlp") mlpLogit(z) else logregLogit(z)
-        return stableSigmoid(logit)
+        return z
     }
 
     private fun logregLogit(z: DoubleArray): Double {
@@ -71,6 +101,7 @@ class PoseFallScorer(
     private val times = ArrayDeque<Long>()
     private var streak = 0
     private var lastScore = 0.0
+    private var lastGbdt = 0.0
     private var lastFired = false
 
     fun update(enabled: Boolean, threshold: Double = this.threshold, holdFrames: Int = this.holdFrames) {
@@ -84,6 +115,7 @@ class PoseFallScorer(
         times.clear()
         streak = 0
         lastScore = 0.0
+        lastGbdt = 0.0
         lastFired = false
     }
 
@@ -91,6 +123,7 @@ class PoseFallScorer(
     fun modelDebug(): ModelPathDebug = ModelPathDebug(
         enabled = enabled,
         score = lastScore,
+        gbdtScore = lastGbdt,
         threshold = threshold,
         streak = streak,
         holdFrames = holdFrames,
@@ -108,13 +141,16 @@ class PoseFallScorer(
         val timesMs = LongArray(times.size) { times[it] }
         val vector = PoseFeatures.features(frames.toList(), timesMs)
         val probability = if (vector == null) null else PoseFallModel.probability(vector)
+        val trees = if (vector == null) null else PoseFallModel.gbdtProbability(vector)
         lastScore = probability ?: 0.0
+        lastGbdt = trees ?: 0.0
         if (!enabled || probability == null) {
             streak = 0
             lastFired = false
             return false
         }
-        if (probability >= threshold) {
+        val hot = probability >= threshold || (trees != null && trees >= PoseFallWeights.GBDT_THRESHOLD)
+        if (hot) {
             streak += 1
             val fired = streak == holdFrames
             lastFired = fired

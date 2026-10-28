@@ -26,14 +26,16 @@ data class SignalCounts(
     val viewDirection: Int = 0,
     val model: Int = 0,
     val lyingStill: Int = 0,
+    val fastFlatten: Int = 0,
 ) {
-    val total: Int get() = rule + viewDirection + model + lyingStill
+    val total: Int get() = rule + viewDirection + model + lyingStill + fastFlatten
 
     operator fun plus(signal: DetectSignal): SignalCounts = when (signal) {
         DetectSignal.RULE -> copy(rule = rule + 1)
         DetectSignal.VIEW_DIRECTION -> copy(viewDirection = viewDirection + 1)
         DetectSignal.MODEL -> copy(model = model + 1)
         DetectSignal.LYING_STILL -> copy(lyingStill = lyingStill + 1)
+        DetectSignal.FAST_FLATTEN -> copy(fastFlatten = fastFlatten + 1)
     }
 }
 
@@ -114,7 +116,7 @@ fun formatWouldTriggerCsv(
     val builder = StringBuilder()
     builder.append("# 낙상제로 모델 테스트\n")
     builder.append(
-        "# 규칙 ${counts.rule}, 시선방향 ${counts.viewDirection}, 포즈모델 ${counts.model}, 바닥에누움 ${counts.lyingStill}\n",
+        "# 규칙 ${counts.rule}, 시선방향 ${counts.viewDirection}, 포즈모델 ${counts.model}, 바닥에누움 ${counts.lyingStill}, 빠른눕힘 ${counts.fastFlatten}\n",
     )
     builder.append(
         "time,signal,posture,torso_angle_deg,model_score,model_threshold,lying_elapsed_s,lying_threshold_s,pose_confidence,person,video_offset_ms\n",

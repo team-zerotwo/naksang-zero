@@ -10,6 +10,7 @@ enum class DetectSignal {
     VIEW_DIRECTION,
     MODEL,
     LYING_STILL,
+    FAST_FLATTEN,
     ;
 
     fun korean(): String = when (this) {
@@ -17,6 +18,7 @@ enum class DetectSignal {
         VIEW_DIRECTION -> "시선 방향"
         MODEL -> "포즈 모델"
         LYING_STILL -> "바닥에 누움"
+        FAST_FLATTEN -> "빠른 눕힘"
     }
 
     fun code(): String = when (this) {
@@ -24,6 +26,7 @@ enum class DetectSignal {
         VIEW_DIRECTION -> "view_direction"
         MODEL -> "model"
         LYING_STILL -> "lying_still"
+        FAST_FLATTEN -> "fast_flatten"
     }
 }
 
@@ -54,6 +57,7 @@ data class LyingPathDebug(
 data class ModelPathDebug(
     val enabled: Boolean = true,
     val score: Double = 0.0,
+    val gbdtScore: Double = 0.0,
     val threshold: Double = 0.99,
     val streak: Int = 0,
     val holdFrames: Int = 2,
@@ -76,6 +80,8 @@ data class FallDebugSnapshot(
     val lyingWitnessedFast: Boolean,
     val lyingEnabled: Boolean,
     val modelScore: Double,
+    val modelGbdtScore: Double = 0.0,
+    val modelGbdtThreshold: Double = 0.0,
     val modelThreshold: Double,
     val modelStreak: Int,
     val modelHoldFrames: Int,
@@ -99,6 +105,8 @@ data class FallDebugSnapshot(
             lyingWitnessedFast = false,
             lyingEnabled = config.lyingStillEnabled,
             modelScore = 0.0,
+            modelGbdtScore = 0.0,
+            modelGbdtThreshold = PoseFallWeights.GBDT_THRESHOLD,
             modelThreshold = PoseFallWeights.THRESHOLD,
             modelStreak = 0,
             modelHoldFrames = PoseFallWeights.HOLD_FRAMES,

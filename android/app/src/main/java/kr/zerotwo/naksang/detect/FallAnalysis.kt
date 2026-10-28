@@ -12,6 +12,7 @@ class FallAnalysis(config: FallConfig = FallConfig()) {
     private val detector = FallDetector(config)
     private val scorer = PoseFallScorer(enabled = config.modelEnabled)
     private val lying = LyingStillDetector(config)
+    private val fast = FastFlattenDetector()
 
     fun updateConfig(config: FallConfig) {
         detector.updateConfig(config)
@@ -23,6 +24,7 @@ class FallAnalysis(config: FallConfig = FallConfig()) {
         detector.reset()
         scorer.reset()
         lying.reset()
+        fast.reset()
     }
 
     fun onFrame(timestampMs: Long, joints: Array<FloatArray>?): FallFrame {
@@ -37,6 +39,7 @@ class FallAnalysis(config: FallConfig = FallConfig()) {
         }
         val modelHit = scorer.onFrame(timestampMs, joints)
         val lyingHit = lying.onJointArray(timestampMs, joints)
+        val fastHit = fast.onJointArray(timestampMs, joints)
         val rule = detector.ruleDebug()
         val model = scorer.modelDebug()
         val lie = lying.lyingDebug()
@@ -46,6 +49,7 @@ class FallAnalysis(config: FallConfig = FallConfig()) {
         if (rule.viewFired) wouldFire.add(DetectSignal.VIEW_DIRECTION)
         if (model.fired) wouldFire.add(DetectSignal.MODEL)
         if (lie.fired) wouldFire.add(DetectSignal.LYING_STILL)
+        if (fastHit) wouldFire.add(DetectSignal.FAST_FLATTEN)
         val posture = postureLabel(
             measured = rule.measured,
             torsoAngleDeg = rule.angleDeg,
@@ -66,6 +70,8 @@ class FallAnalysis(config: FallConfig = FallConfig()) {
             lyingWitnessedFast = lie.witnessedFast,
             lyingEnabled = cfg.lyingStillEnabled,
             modelScore = model.score,
+            modelGbdtScore = model.gbdtScore,
+            modelGbdtThreshold = PoseFallWeights.GBDT_THRESHOLD,
             modelThreshold = model.threshold,
             modelStreak = model.streak,
             modelHoldFrames = model.holdFrames,
@@ -77,7 +83,7 @@ class FallAnalysis(config: FallConfig = FallConfig()) {
             wouldFire = wouldFire,
         )
         return FallFrame(
-            suspected = ruleHit || modelHit || lyingHit,
+            suspected = ruleHit || modelHit || lyingHit || fastHit,
             debug = snapshot,
         )
     }

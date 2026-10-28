@@ -58,7 +58,7 @@ class WouldTriggerLogTest {
         val csv = formatWouldTriggerCsv(listOf(event), SignalCounts(rule = 1), ZoneId.of("Asia/Seoul"))
         val lines = csv.lines()
         assertEquals("# 낙상제로 모델 테스트", lines[0])
-        assertEquals("# 규칙 1, 시선방향 0, 포즈모델 0, 바닥에누움 0", lines[1])
+        assertEquals("# 규칙 1, 시선방향 0, 포즈모델 0, 바닥에누움 0, 빠른눕힘 0", lines[1])
         assertEquals(
             "time,signal,posture,torso_angle_deg,model_score,model_threshold,lying_elapsed_s,lying_threshold_s,pose_confidence,person,video_offset_ms",
             lines[2],

@@ -218,6 +218,10 @@ fun ModelTestScreen(
             )
             ScoreBar(lie.modelScore, lie.modelThreshold)
             MetricRow(
+                "나무 점수",
+                String.format(Locale.US, "%.2f / %.2f", lie.modelGbdtScore, lie.modelGbdtThreshold),
+            )
+            MetricRow(
                 "상태",
                 modelPathStatus(lie.modelEnabled, DetectSignal.MODEL in lie.wouldFire, lie.modelStreak) +
                     " · 연속 ${lie.modelStreak}/${lie.modelHoldFrames}",
@@ -244,6 +248,7 @@ fun ModelTestScreen(
                     " · 멈춤 ${formatSeconds(viewElapsed)}초 / ${formatSeconds(lie.ruleStillNeedMs)}초",
             )
             MetricRow("포즈 모델", modelPathStatus(lie.modelEnabled, DetectSignal.MODEL in lie.wouldFire, lie.modelStreak))
+            MetricRow("빠른 눕힘", if (DetectSignal.FAST_FLATTEN in lie.wouldFire) "지금 발화" else "대기")
             MetricRow("바닥에 누움", lyingPathStatus(lie.lyingEnabled, DetectSignal.LYING_STILL in lie.wouldFire, lie.lyingCounting))
             Text(
                 "진행 중은 아직 시간이 덜 찬 상태예요. 지금 발화는 실제 감시였다면 30초 알림이 시작될 프레임이에요.",
@@ -266,7 +271,7 @@ fun ModelTestScreen(
 
             SectionLabel("발화 횟수")
             Text(
-                "규칙 ${ui.counts.rule} · 시선 방향 ${ui.counts.viewDirection} · 포즈 모델 ${ui.counts.model} · 바닥에 누움 ${ui.counts.lyingStill}",
+                "규칙 ${ui.counts.rule} · 시선 방향 ${ui.counts.viewDirection} · 포즈 모델 ${ui.counts.model} · 빠른 눕힘 ${ui.counts.fastFlatten} · 바닥에 누움 ${ui.counts.lyingStill}",
                 color = NaksangColors.Text,
                 fontFamily = Pretendard,
                 fontWeight = FontWeight.Bold,

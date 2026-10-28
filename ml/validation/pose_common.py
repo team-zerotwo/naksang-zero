@@ -58,9 +58,19 @@ MANIFEST_FIELDS = [
 
 
 def landmark_header() -> list[str]:
+    """Image landmarks, then world landmarks in meters (hip-centered, camera axes).
+
+    World columns are extra. The Kotlin replay reads the image prefix and
+    ignores the rest. World landmarks come from the same lite IMAGE detect
+    call; they are not a second model.
+    """
     header = ["timestamp_ms", "source_frame", "pose_found"]
     for index in range(LANDMARKS):
         header.extend([f"l{index:02d}_x", f"l{index:02d}_y", f"l{index:02d}_v"])
+    for index in range(LANDMARKS):
+        header.extend([f"w{index:02d}_x", f"w{index:02d}_y", f"w{index:02d}_z"])
+    for index in range(LANDMARKS):
+        header.append(f"n{index:02d}_z")
     return header
 
 
@@ -187,11 +197,31 @@ def extract_jpegs(video: Path, tmp: Path, scale: str | None = None) -> list[Path
     return sorted(tmp.glob("f_*.jpg"))
 
 
-def landmark_row(timestamp_ms: int, source_frame: int, pose) -> list[str]:
+def _append_world(values: list[str], world) -> None:
+    if world is None or len(world) != LANDMARKS:
+        values.extend(["0"] * (LANDMARKS * 3))
+        return
+    for landmark in world:
+        values.append(f"{float(landmark.x or 0.0):.6f}")
+        values.append(f"{float(landmark.y or 0.0):.6f}")
+        values.append(f"{float(getattr(landmark, 'z', 0.0) or 0.0):.6f}")
+
+
+def _append_image_z(values: list[str], pose) -> None:
+    if pose is None or len(pose) != LANDMARKS:
+        values.extend(["0"] * LANDMARKS)
+        return
+    for landmark in pose:
+        values.append(f"{float(getattr(landmark, 'z', 0.0) or 0.0):.6f}")
+
+
+def landmark_row(timestamp_ms: int, source_frame: int, pose, world=None) -> list[str]:
     if pose is None or len(pose) != LANDMARKS:
         values = ["0", "0", "0"] + ["0"] * (LANDMARKS * 3)
         values[0] = str(timestamp_ms)
         values[1] = str(source_frame)
+        _append_world(values, None)
+        _append_image_z(values, None)
         return values
     values = [str(timestamp_ms), str(source_frame), "1"]
     for landmark in pose:
@@ -199,6 +229,8 @@ def landmark_row(timestamp_ms: int, source_frame: int, pose) -> list[str]:
         values.append(f"{float(landmark.x or 0.0):.6f}")
         values.append(f"{float(landmark.y or 0.0):.6f}")
         values.append(f"{0.0 if visibility is None else float(visibility):.6f}")
+    _append_world(values, world)
+    _append_image_z(values, pose)
     return values
 
 
@@ -225,9 +257,13 @@ def write_landmark_csv(video: Path, csv_path: Path, info: dict, landmarker, scal
                 mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
                 result = landmarker.detect(mp_image)
                 pose = result.pose_landmarks[0] if result.pose_landmarks else None
+                world = result.pose_world_landmarks[0] if result.pose_world_landmarks else None
                 if pose is not None and len(pose) != LANDMARKS:
                     pose = None
-                writer.writerow(landmark_row(timestamp_ms, source_frame, pose))
+                    world = None
+                if world is not None and len(world) != LANDMARKS:
+                    world = None
+                writer.writerow(landmark_row(timestamp_ms, source_frame, pose, world))
         partial.replace(csv_path)
         return analysis_w, analysis_h
     finally:
